@@ -90,7 +90,7 @@ $touchedFiles = 0
 $totalSubs = 0
 foreach ($f in $targets) {
     try { $t = Read-Utf8 $f.FullName } catch { continue }
-    if ($t -notmatch "SoloMD") { continue }
+    if ($t -cnotmatch "SoloMD") { continue }
     $n = $t.Replace("SoloMD CJK", $fontGuard)
     $hits = ([regex]::Matches($n, "SoloMD")).Count
     $n = $n.Replace("SoloMD", $NewName)
@@ -194,12 +194,12 @@ if ($c -notmatch ('name\s*=\s*"' + [regex]::Escape($NewName) + '"')) {
     throw "Cargo.toml [[bin]] name 改写失败"
 }
 
-# 界面里不允许残留 SoloMD（字体族名除外）
+# 界面里不允许残留 SoloMD（字体族名除外；注意必须用 -cmatch，否则小写 solomd 也算命中）
 $leftovers = @()
 foreach ($f in $targets) {
     try { $t = Read-Utf8 $f.FullName } catch { continue }
     $probe = $t.Replace("SoloMD CJK", "")
-    if ($probe -match "SoloMD") { $leftovers += $f.FullName }
+    if ($probe -cmatch "SoloMD") { $leftovers += $f.FullName }
 }
 if ($leftovers.Count -gt 0) {
     throw ("界面里仍有 SoloMD 残留：" + ($leftovers -join "; "))
@@ -207,7 +207,7 @@ if ($leftovers.Count -gt 0) {
 
 # 窗口标题是运行时由 App.vue 拼的，单独确认一次
 $appVue = Read-Utf8 (Join-Path $Root "app/src/App.vue")
-if ($appVue -notmatch ("— " + [regex]::Escape($NewName))) {
+if ($appVue -cnotmatch ("— " + [regex]::Escape($NewName))) {
     throw "App.vue 的窗口标题没有改成 $NewName"
 }
 
