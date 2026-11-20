@@ -37,17 +37,18 @@ jobs:
           if ($cargo -notmatch '\[\[bin\]\]') { throw "Cargo.toml 缺少 [[bin]]" }
           if ($cargo -notmatch 'name = "KJL-OFFICE"') { throw "Cargo.toml [[bin]] name 与 mainBinaryName 不一致" }
 
+      # pnpm 必须先于 setup-node 安装：setup-node 的 cache: pnpm 会调用 pnpm store path
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
           cache: 'pnpm'
           cache-dependency-path: app/pnpm-lock.yaml
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
