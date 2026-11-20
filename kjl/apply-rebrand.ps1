@@ -11,14 +11,14 @@
       · app/index.html                         <title>
       · app/package.json                       name
       · app/src/**（.ts/.vue/.md/.css/.json）   界面里的所有可见品牌名 SoloMD -> KJL-OFFICE
-      · app/src/lib/kjl-flags.ts               开关文件：KJL_SUPPORT_PROMPTS=false（赞助关闭）、KJL_STAR_PROMPT=true（Star 开启）
+      · app/src/lib/kjl-flags.ts               开关：KJL_SUPPORT_PROMPTS=false（赞助关闭）、KJL_STAR_PROMPT=true（Star 开启）
       · SettingsPanel / AboutDialog           所有赞助、打赏、推广入口用 v-if/守卫关掉
       · App.vue / AboutDialog                 Star 邀请与仓库链接指向本仓库
-      · app/src-tauri（Rust/NSIS/wix）         打包层里的 SoloMD 字符串一并换掉
+      · app/src-tauri（Rust/NSIS/wix）         打包层里的可见品牌字符串一并换掉（标识符保留）
       · app/src/lib/telemetry.ts               替换为 no-op
       · app/src/lib/check-update.ts            替换为 no-op
     注意：小写 solomd 一律不动（localStorage 键、URL、MIME、CLI 名都靠它），
-    字体族名 "SoloMD CJK" 也保留（@font-face 与 font-family 必须同名）。
+    字体族名 "SoloMD CJK" 与 SoloMDIAPDelegate 这类标识符也保留。
     赞助提示只关入口，功能与文案代码全部保留：KJL_SUPPORT_PROMPTS 改回 true 即可恢复。
 #>
 
@@ -218,17 +218,22 @@ $tauriFiles = @(Get-ChildItem -Path $tauriRoot -Recurse -File | Where-Object {
     $exts2 -contains $_.Extension.ToLower() -and
     $_.FullName -notmatch 'icons|binaries|target|gen'
 })
+# 只换独立成词的 SoloMD：SoloMDIAPDelegate 这类 Rust/Cocoa 标识符原样保留，否则编译失败
+$freeRe = '(?<![A-Za-z0-9_])SoloMD(?![A-Za-z0-9_])'
 $rFiles = 0
 $rSubs = 0
 foreach ($f in $tauriFiles) {
     try { $t = Read-Utf8 $f.FullName } catch { continue }
     if ($t -cnotmatch "SoloMD") { continue }
-    $rSubs += ([regex]::Matches($t, "SoloMD")).Count
-    $n = $t.Replace("SoloMD", $NewName)
+    $n = [regex]::Replace($t, $freeRe, $NewName)
+    $n = $n.Replace('"SoloMD_{', '"' + $NewName + '_{')
+    $n = [regex]::Replace($n, '(?<=")SoloMD_', ($NewName + '_'))
+    if ($n -ceq $t) { continue }
+    $rSubs += ([regex]::Matches($t, "SoloMD")).Count - ([regex]::Matches($n, "SoloMD")).Count
     Write-Utf8NoBom $f.FullName $n
     $rFiles++
 }
-Write-Host ("  [改] 打包层品牌名：{0} 处，涉及 {1} 个文件" -f $rSubs, $rFiles)
+Write-Host ("  [改] 打包层品牌名：{0} 处，涉及 {1} 个文件（标识符保留）" -f $rSubs, $rFiles)
 
 Write-Host "== 校验 =="
 $t = Read-Utf8 $tauri
@@ -273,12 +278,15 @@ $appVue3 = Read-Utf8 $appVuePath
 if ($appVue3 -cnotmatch $repoSlug) { throw "App.vue 的 Star 提示未指向 $repoSlug" }
 if ($appVue3 -cmatch 'zhitongblog/solomd') { throw "App.vue 仍指向上游仓库" }
 
-# 打包层（Rust / NSIS / wix）不允许残留 SoloMD
+# 打包层不允许残留可见品牌名；标识符必须活下来
+$iapRs = Join-Path $Root "app/src-tauri/src/iap.rs"
 $rLeft = @()
 foreach ($f in $tauriFiles) {
     try { $t = Read-Utf8 $f.FullName } catch { continue }
-    if ($t -cmatch 'SoloMD') { $rLeft += $f.FullName }
+    if ([regex]::IsMatch($t, $freeRe)) { $rLeft += $f.FullName }
+    elseif ($t -cmatch '"SoloMD_') { $rLeft += $f.FullName }
 }
 if ($rLeft.Count -gt 0) { throw ("打包层仍有 SoloMD 残留：" + ($rLeft -join "; ")) }
+if ((Read-Utf8 $iapRs) -cnotmatch 'SoloMDIAPDelegate') { throw "iap.rs 的 Cocoa 类名被误改，编译会失败" }
 
 Write-Host "OK: productName=$NewName, bin=$NewName, identifier=$Identifier, 界面品牌名已统一, 赞助已关闭, Star 邀请开启并指向 $repoSlug"
