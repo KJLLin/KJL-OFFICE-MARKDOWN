@@ -37,17 +37,21 @@ jobs:
           if ($cargo -notmatch '\[\[bin\]\]') { throw "Cargo.toml 缺少 [[bin]]" }
           if ($cargo -notmatch 'name = "KJL-OFFICE"') { throw "Cargo.toml [[bin]] name 与 mainBinaryName 不一致" }
 
-          # 界面里的品牌名（窗口标题、菜单、关于页、欢迎文档）也必须改掉
+          # 界面里的品牌名（窗口标题、菜单、关于页、欢迎文档）必须改掉；注意 -cmatch
           $appVue = Get-Content app/src/App.vue -Raw
-          if ($appVue -notmatch '— KJL-OFFICE') { throw "App.vue 窗口标题未改名" }
+          if ($appVue -cnotmatch '— KJL-OFFICE') { throw "App.vue 窗口标题未改名" }
           $exts = @('.ts', '.vue', '.md', '.css', '.json', '.html')
           $leftovers = @()
           foreach ($f in Get-ChildItem app/src -Recurse -File | Where-Object { $exts -contains $_.Extension.ToLower() }) {
             $t = (Get-Content $f.FullName -Raw).Replace('SoloMD CJK', '')
-            if ($t -match 'SoloMD') { $leftovers += $f.FullName }
+            if ($t -cmatch 'SoloMD') { $leftovers += $f.FullName }
           }
           if ($leftovers.Count -gt 0) { throw ("界面仍残留 SoloMD: " + ($leftovers -join '; ')) }
-          Write-Host 'UI 品牌名检查通过'
+
+          # 赞助提示必须已关闭（只关入口，代码保留）
+          if (-not (Test-Path app/src/lib/kjl-flags.ts)) { throw "kjl-flags.ts 缺失" }
+          if ((Get-Content app/src/lib/kjl-flags.ts -Raw) -notmatch 'KJL_SUPPORT_PROMPTS = false') { throw "赞助提示未关闭" }
+          Write-Host 'UI 品牌名 + 赞助提示检查通过'
 
       # pnpm 必须先于 setup-node 安装：setup-node 的 cache: pnpm 会调用 pnpm store path
       - name: Setup pnpm
@@ -120,7 +124,7 @@ jobs:
           body: |
             KJL-OFFICE（基于 SoloMD，MIT）
 
-            Windows x64 安装包见下方附件；遥测与更新检查已停用。
+            Windows x64 安装包见下方附件；遥测、更新检查、赞助与 Star 提示均已关闭。
           files: dist-kjl/*
           fail_on_unmatched_files: true
           generate_release_notes: false
