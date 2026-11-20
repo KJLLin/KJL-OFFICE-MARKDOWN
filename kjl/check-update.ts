@@ -3,7 +3,7 @@
  *
  * 本文件替换上游的 app/src/lib/check-update.ts。
  * 上游会访问 solomd.app/api/stats、GitHub Releases、Gitee Releases 三个源，
- * 并在发现新版本时引导下载官方安装包（等于把用户换回 SoloMD）。
+ * 并在发现新版本时引导下载官方安装包（等于把用户换回官方发行版）。
  * 改装版只保留同名导出，全部改为本地空实现，不产生任何出网请求。
  */
 import { getVersion } from '@tauri-apps/api/app';
