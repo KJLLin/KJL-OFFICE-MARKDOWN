@@ -1,0 +1,113 @@
+name: Build KJL-OFFICE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'kjl-build'
+    tags:
+      - 'kjl-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply KJL-OFFICE rebrand
+        shell: pwsh
+        run: ./kjl/apply-rebrand.ps1
+
+      - name: Verify rebrand applied
+        shell: pwsh
+        run: |
+          $cfg = Get-Content app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          Write-Host "productName : $($cfg.productName)"
+          Write-Host "identifier  : $($cfg.identifier)"
+          Write-Host "binary      : $($cfg.mainBinaryName)"
+          if ($cfg.productName -ne 'KJL-OFFICE') { throw "productName 未改写" }
+          if ($cfg.mainBinaryName -ne 'KJL-OFFICE') { throw "mainBinaryName 未改写" }
+          $cargo = Get-Content app/src-tauri/Cargo.toml -Raw
+          if ($cargo -notmatch '\[\[bin\]\]') { throw "Cargo.toml 缺少 [[bin]]" }
+          if ($cargo -notmatch 'name = "KJL-OFFICE"') { throw "Cargo.toml [[bin]] name 与 mainBinaryName 不一致" }
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'pnpm'
+          cache-dependency-path: app/pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: cd app && pnpm install --frozen-lockfile
+
+      - name: Pre-build solomd-mcp sidecar
+        shell: bash
+        run: |
+          set -euo pipefail
+          TRIPLE="$(rustc -vV | sed -n 's/^host: //p')"
+          echo "host triple: $TRIPLE"
+          bash scripts/build-mcp-sidecar.sh "$TRIPLE"
+
+      - name: Build (MSI + NSIS)
+        run: cd app && pnpm tauri build --bundles msi,nsis
+        env:
+          CI: 'true'
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          $out = "dist-kjl"
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $bundle = "app/src-tauri/target/release/bundle"
+          Get-ChildItem "$bundle/msi/*.msi"  -ErrorAction SilentlyContinue | Copy-Item -Destination $out
+          Get-ChildItem "$bundle/nsis/*.exe" -ErrorAction SilentlyContinue | Copy-Item -Destination $out
+          $portable = "app/src-tauri/target/release/KJL-OFFICE.exe"
+          if (Test-Path $portable) { Copy-Item $portable $out }
+          Get-ChildItem $out -File | ForEach-Object {
+            "{0}  {1:N2} MB" -f $_.Name, ($_.Length / 1MB)
+            (Get-FileHash $_.FullName -Algorithm SHA256).Hash | Out-File "$out/SHA256SUMS.txt" -Append
+          }
+          if (-not (Get-ChildItem $out -File | Where-Object { $_.BaseName -like 'KJL-OFFICE*' })) {
+            throw "没有产出任何安装包，检查上面的构建日志"
+          }
+
+      - name: Upload KJL-OFFICE artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: KJL-OFFICE-windows-x64
+          path: dist-kjl/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach installers to a Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kjl-build-${{ github.run_number }}
+          name: KJL-OFFICE build ${{ github.run_number }}
+          body: |
+            KJL-OFFICE（基于 SoloMD，MIT）
+
+            Windows x64 安装包见下方附件；遥测与更新检查已停用。
+          files: dist-kjl/*
+          fail_on_unmatched_files: true
+          generate_release_notes: false
