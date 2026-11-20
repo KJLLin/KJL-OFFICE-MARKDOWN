@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    KJL-OFFICE 品牌化 + 停用遥测/更新检查（幂等，可重复执行）
+    KJL-OFFICE 品牌化 + 停用遥测/更新检查 + 关闭赞助提示（幂等，可重复执行）
 
 .DESCRIPTION
     在 solomd 仓库根目录执行，改动这些地方：
@@ -11,10 +11,13 @@
       · app/index.html                         <title>
       · app/package.json                       name
       · app/src/**（.ts/.vue/.md/.css/.json）   界面里的所有可见品牌名 SoloMD -> KJL-OFFICE
+      · app/src/lib/kjl-flags.ts               开关文件：KJL_SUPPORT_PROMPTS = false
+      · SettingsPanel / AboutDialog / star-prompt   所有赞助、打赏、推广、Star 入口用 v-if/守卫关掉
       · app/src/lib/telemetry.ts               替换为 no-op
       · app/src/lib/check-update.ts            替换为 no-op
     注意：小写 solomd 一律不动（localStorage 键、URL、MIME、CLI 名都靠它），
     字体族名 "SoloMD CJK" 也保留（@font-face 与 font-family 必须同名）。
+    赞助提示只关入口，功能与文案代码全部保留：把 KJL_SUPPORT_PROMPTS 改回 true 即可恢复。
 #>
 
 [CmdletBinding()]
@@ -100,7 +103,78 @@ foreach ($f in $targets) {
 }
 Write-Host ("  [改] 界面品牌名：{0} 处，涉及 {1} 个文件" -f $totalSubs, $touchedFiles)
 
-Write-Host "== 7. 停用遥测与更新检查 =="
+Write-Host "== 7. 关闭赞助 / Star 提示（只关入口，功能代码全部保留）=="
+$flagsSrc = Join-Path $PSScriptRoot "kjl-flags.ts"
+$flagsDst = Join-Path $Root "app/src/lib/kjl-flags.ts"
+if (-not (Test-Path $flagsSrc)) { throw "缺少 $flagsSrc" }
+Copy-Item $flagsSrc $flagsDst -Force
+Write-Host "  [改] kjl-flags.ts -> KJL_SUPPORT_PROMPTS = false"
+
+function PatchOnce([string]$Path, [string]$Sentinel, [string]$Pattern, [string]$Replacement, [string]$Label) {
+    if (-not (Test-Path $Path)) { Write-Warning "缺少文件：$Path"; return }
+    $t = Read-Utf8 $Path
+    if ($t.Contains($Sentinel)) { Write-Host "  [跳过] $Label（已处理）"; return }
+    $new = [regex]::Replace($t, $Pattern, $Replacement)
+    if ($new -ceq $t) { Write-Host "  [跳过] $Label（锚点未命中）"; return }
+    Write-Utf8NoBom $Path $new
+    Write-Host "  [改] $Label"
+}
+
+$settings = Join-Path $Root "app/src/components/SettingsPanel.vue"
+$about    = Join-Path $Root "app/src/components/AboutDialog.vue"
+$star     = Join-Path $Root "app/src/lib/star-prompt.ts"
+
+# —— Star 提示（首启若干天后的一次性弹窗）——
+PatchOnce $star "from './kjl-flags';" '^/\*\*' ("import { KJL_SUPPORT_PROMPTS } from './kjl-flags';" + "`n`n/**") "star-prompt import"
+PatchOnce $star "if (!KJL_SUPPORT_PROMPTS) return false;" `
+    'export function shouldPrompt\(state: StarPromptState, today: string\): boolean \{' `
+    ("export function shouldPrompt(state: StarPromptState, today: string): boolean {" + "`n  // KJL: 赞助 / Star 提示整体关闭，原判断逻辑保留在下面" + "`n  if (!KJL_SUPPORT_PROMPTS) return false;") `
+    "star-prompt shouldPrompt"
+
+# —— 设置面板：侧栏「支持」入口 + 打赏卡片 + 弹窗 ——
+PatchOnce $settings "from '../lib/kjl-flags';" "import SupportDialog from './SupportDialog.vue';" `
+    ("import SupportDialog from './SupportDialog.vue';" + "`nimport { KJL_SUPPORT_PROMPTS } from '../lib/kjl-flags';") `
+    "SettingsPanel import"
+PatchOnce $settings 'v-if="KJL_SUPPORT_PROMPTS" class="settings__nav-supporter-wrap"' `
+    '<div class="settings__nav-supporter-wrap">' `
+    '<div v-if="KJL_SUPPORT_PROMPTS" class="settings__nav-supporter-wrap">' `
+    "设置侧栏「支持开发者」"
+PatchOnce $settings '<div v-if="KJL_SUPPORT_PROMPTS" data-cat="basics"' `
+    '<div\r?\n\s*data-cat="basics"\r?\n\s*class="settings__supporter-guide"' `
+    '<div v-if="KJL_SUPPORT_PROMPTS" data-cat="basics" class="settings__supporter-guide"' `
+    "设置页打赏卡片"
+PatchOnce $settings '<SupportDialog v-if="KJL_SUPPORT_PROMPTS"' `
+    '<SupportDialog\s*\r?\n\s*:open="supportModalOpen"' `
+    '<SupportDialog v-if="KJL_SUPPORT_PROMPTS" :open="supportModalOpen"' `
+    "设置页 SupportDialog"
+
+# —— 关于页：徽章、支持入口、推广按钮、赞助者名单、sponsors.json 请求 ——
+PatchOnce $about "from '../lib/kjl-flags';" "import SupportDialog from './SupportDialog.vue';" `
+    ("import SupportDialog from './SupportDialog.vue';" + "`nimport { KJL_SUPPORT_PROMPTS } from '../lib/kjl-flags';") `
+    "AboutDialog import"
+PatchOnce $about 'KJL_SUPPORT_PROMPTS && activeBadge' 'v-if="activeBadge"' 'v-if="KJL_SUPPORT_PROMPTS && activeBadge"' "关于页支持者徽章"
+PatchOnce $about '<button v-if="KJL_SUPPORT_PROMPTS" class="about__link"' `
+    '<button class="about__link" @click="supportOpen = true">' `
+    '<button v-if="KJL_SUPPORT_PROMPTS" class="about__link" @click="supportOpen = true">' `
+    "关于页「支持开发者」"
+PatchOnce $about 'KJL_SUPPORT_PROMPTS && !iapUseStoreFlow' `
+    '<button v-if="!iapUseStoreFlow" class="about__promote"' `
+    '<button v-if="KJL_SUPPORT_PROMPTS && !iapUseStoreFlow" class="about__promote"' `
+    "关于页「帮忙推广」"
+PatchOnce $about 'KJL_SUPPORT_PROMPTS && sponsors.length' `
+    '<div v-if="sponsors.length" class="about__sponsors">' `
+    '<div v-if="KJL_SUPPORT_PROMPTS && sponsors.length" class="about__sponsors">' `
+    "关于页赞助者名单"
+PatchOnce $about 'if (!KJL_SUPPORT_PROMPTS) return;' `
+    'async function loadSponsors\(\) \{' `
+    'async function loadSponsors() { if (!KJL_SUPPORT_PROMPTS) return;' `
+    "关于页不发 sponsors.json 请求"
+PatchOnce $about '<SupportDialog v-if="KJL_SUPPORT_PROMPTS"' `
+    '<SupportDialog :open="supportOpen"' `
+    '<SupportDialog v-if="KJL_SUPPORT_PROMPTS" :open="supportOpen"' `
+    "关于页 SupportDialog"
+
+Write-Host "== 8. 停用遥测与更新检查 =="
 foreach ($f in @("telemetry.ts", "check-update.ts")) {
     $src = Join-Path $PSScriptRoot $f
     $dst = Join-Path $Root ("app/src/lib/" + $f)
@@ -137,4 +211,13 @@ if ($appVue -notmatch ("— " + [regex]::Escape($NewName))) {
     throw "App.vue 的窗口标题没有改成 $NewName"
 }
 
-Write-Host "OK: productName=$NewName, bin=$NewName, identifier=$Identifier, 界面品牌名已统一"
+# 赞助提示必须已关闭（代码保留，只改开关）
+$flags = Read-Utf8 (Join-Path $Root "app/src/lib/kjl-flags.ts")
+if ($flags -notmatch 'KJL_SUPPORT_PROMPTS = false') {
+    throw "kjl-flags.ts 没有关闭赞助提示"
+}
+foreach ($p in @($settings, $about, $star)) {
+    if ((Read-Utf8 $p) -notmatch 'KJL_SUPPORT_PROMPTS') { throw ("赞助提示未处理：" + $p) }
+}
+
+Write-Host "OK: productName=$NewName, bin=$NewName, identifier=$Identifier, 界面品牌名已统一, 赞助提示已关闭"
