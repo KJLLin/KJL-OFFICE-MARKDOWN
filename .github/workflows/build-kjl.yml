@@ -25,7 +25,7 @@ jobs:
         run: ./kjl/apply-rebrand.ps1
 
       - name: Verify rebrand applied
-        shell: pwwsh
+        shell: pwsh
         run: |
           $cfg = Get-Content app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
           Write-Host "productName : $($cfg.productName)"
