@@ -3,7 +3,7 @@
     KJL-OFFICE 品牌化 + 停用遥测/更新检查 + 关闭赞助提示（幂等，可重复执行）
 
 .DESCRIPTION
-    在 solomd 仓库根目录执行，改动这些地方：
+    在仓库根目录执行，改动这些地方：
       · app/src-tauri/tauri.conf.json          productName / identifier / mainBinaryName / title / publisher
       · app/src-tauri/tauri.windows.conf.json  title
       · app/src-tauri/Cargo.toml               [[bin]] name + description
@@ -11,13 +11,15 @@
       · app/index.html                         <title>
       · app/package.json                       name
       · app/src/**（.ts/.vue/.md/.css/.json）   界面里的所有可见品牌名 SoloMD -> KJL-OFFICE
-      · app/src/lib/kjl-flags.ts               开关文件：KJL_SUPPORT_PROMPTS = false
-      · SettingsPanel / AboutDialog / star-prompt   所有赞助、打赏、推广、Star 入口用 v-if/守卫关掉
+      · app/src/lib/kjl-flags.ts               开关文件：KJL_SUPPORT_PROMPTS=false（赞助关闭）、KJL_STAR_PROMPT=true（Star 开启）
+      · SettingsPanel / AboutDialog           所有赞助、打赏、推广入口用 v-if/守卫关掉
+      · App.vue / AboutDialog                 Star 邀请与仓库链接指向本仓库
+      · app/src-tauri（Rust/NSIS/wix）         打包层里的 SoloMD 字符串一并换掉
       · app/src/lib/telemetry.ts               替换为 no-op
       · app/src/lib/check-update.ts            替换为 no-op
     注意：小写 solomd 一律不动（localStorage 键、URL、MIME、CLI 名都靠它），
     字体族名 "SoloMD CJK" 也保留（@font-face 与 font-family 必须同名）。
-    赞助提示只关入口，功能与文案代码全部保留：把 KJL_SUPPORT_PROMPTS 改回 true 即可恢复。
+    赞助提示只关入口，功能与文案代码全部保留：KJL_SUPPORT_PROMPTS 改回 true 即可恢复。
 #>
 
 [CmdletBinding()]
@@ -103,12 +105,12 @@ foreach ($f in $targets) {
 }
 Write-Host ("  [改] 界面品牌名：{0} 处，涉及 {1} 个文件" -f $totalSubs, $touchedFiles)
 
-Write-Host "== 7. 关闭赞助 / Star 提示（只关入口，功能代码全部保留）=="
+Write-Host "== 7. 关闭赞助提示（Star 邀请保留并指向本仓库，只关入口）=="
 $flagsSrc = Join-Path $PSScriptRoot "kjl-flags.ts"
 $flagsDst = Join-Path $Root "app/src/lib/kjl-flags.ts"
 if (-not (Test-Path $flagsSrc)) { throw "缺少 $flagsSrc" }
 Copy-Item $flagsSrc $flagsDst -Force
-Write-Host "  [改] kjl-flags.ts -> KJL_SUPPORT_PROMPTS = false"
+Write-Host "  [改] kjl-flags.ts -> 赞助关、Star 开"
 
 function PatchOnce([string]$Path, [string]$Sentinel, [string]$Pattern, [string]$Replacement, [string]$Label) {
     if (-not (Test-Path $Path)) { Write-Warning "缺少文件：$Path"; return }
@@ -124,11 +126,11 @@ $settings = Join-Path $Root "app/src/components/SettingsPanel.vue"
 $about    = Join-Path $Root "app/src/components/AboutDialog.vue"
 $star     = Join-Path $Root "app/src/lib/star-prompt.ts"
 
-# —— Star 提示（首启若干天后的一次性弹窗）——
-PatchOnce $star "from './kjl-flags';" '^/\*\*' ("import { KJL_SUPPORT_PROMPTS } from './kjl-flags';" + "`n`n/**") "star-prompt import"
-PatchOnce $star "if (!KJL_SUPPORT_PROMPTS) return false;" `
+# —— Star 提示（若干天后的一次性弹窗，保持开启，动作指向本仓库）——
+PatchOnce $star "from './kjl-flags';" '^/\*\*' ("import { KJL_STAR_PROMPT } from './kjl-flags';" + "`n`n/**") "star-prompt import"
+PatchOnce $star "if (!KJL_STAR_PROMPT) return false;" `
     'export function shouldPrompt\(state: StarPromptState, today: string\): boolean \{' `
-    ("export function shouldPrompt(state: StarPromptState, today: string): boolean {" + "`n  // KJL: 赞助 / Star 提示整体关闭，原判断逻辑保留在下面" + "`n  if (!KJL_SUPPORT_PROMPTS) return false;") `
+    ("export function shouldPrompt(state: StarPromptState, today: string): boolean {" + "`n  // KJL: Star 邀请由 KJL_STAR_PROMPT 控制（当前开启），原判断逻辑保留" + "`n  if (!KJL_STAR_PROMPT) return false;") `
     "star-prompt shouldPrompt"
 
 # —— 设置面板：侧栏「支持」入口 + 打赏卡片 + 弹窗 ——
@@ -174,6 +176,31 @@ PatchOnce $about '<SupportDialog v-if="KJL_SUPPORT_PROMPTS"' `
     '<SupportDialog v-if="KJL_SUPPORT_PROMPTS" :open="supportOpen"' `
     "关于页 SupportDialog"
 
+# —— Star 邀请与关于页链接指向本仓库 ——
+$repoSlug = "KJLLin/KJL-OFFICE-MARKDOWN"
+$repoUrl  = "https://github.com/" + $repoSlug
+$appVuePath = Join-Path $Root "app/src/App.vue"
+
+function ReplaceLiteral([string]$Path, [string]$From, [string]$To, [string]$Label) {
+    if (-not (Test-Path $Path)) { Write-Warning "缺少文件：$Path"; return }
+    $t = Read-Utf8 $Path
+    if (-not $t.Contains($From)) { Write-Host "  [跳过] $Label"; return }
+    Write-Utf8NoBom $Path ($t.Replace($From, $To))
+    Write-Host "  [改] $Label"
+}
+
+ReplaceLiteral $appVuePath "https://github.com/zhitongblog/solomd" $repoUrl "Star 提示 -> 本仓库"
+ReplaceLiteral $about "zhitongblog/solomd" $repoSlug "关于页 GitHub 链接/文案"
+ReplaceLiteral $about "https://solomd.app/whats-new" ($repoUrl + "/releases") "关于页更新日志 -> 本仓库 Releases"
+ReplaceLiteral (Join-Path $Root "app/src/i18n/zh.ts") `
+    "觉得 KJL-OFFICE 好用？去 GitHub 点个 Star 吧——它由一个人开发、免费开源，Star 能让更多人发现它。" `
+    "觉得 KJL-OFFICE 好用？去 GitHub 点个 Star 吧——基于 MIT 开源项目改装的本地 Markdown 编辑器，Star 能让更多人发现它。" `
+    "Star 提示中文文案"
+ReplaceLiteral (Join-Path $Root "app/src/i18n/en.ts") `
+    "it\'s made by one developer, and free." `
+    "it\'s based on an MIT-licensed upstream editor." `
+    "Star 提示英文文案"
+
 Write-Host "== 8. 停用遥测与更新检查 =="
 foreach ($f in @("telemetry.ts", "check-update.ts")) {
     $src = Join-Path $PSScriptRoot $f
@@ -184,6 +211,25 @@ foreach ($f in @("telemetry.ts", "check-update.ts")) {
 }
 
 Write-Host ""
+Write-Host "== 9. Rust / 打包层品牌字符串 =="
+$tauriRoot = Join-Path $Root "app/src-tauri"
+$exts2 = @(".rs", ".toml", ".json", ".nsh", ".wxs", ".yml", ".md")
+$tauriFiles = @(Get-ChildItem -Path $tauriRoot -Recurse -File | Where-Object {
+    $exts2 -contains $_.Extension.ToLower() -and
+    $_.FullName -notmatch 'icons|binaries|target|gen'
+})
+$rFiles = 0
+$rSubs = 0
+foreach ($f in $tauriFiles) {
+    try { $t = Read-Utf8 $f.FullName } catch { continue }
+    if ($t -cnotmatch "SoloMD") { continue }
+    $rSubs += ([regex]::Matches($t, "SoloMD")).Count
+    $n = $t.Replace("SoloMD", $NewName)
+    Write-Utf8NoBom $f.FullName $n
+    $rFiles++
+}
+Write-Host ("  [改] 打包层品牌名：{0} 处，涉及 {1} 个文件" -f $rSubs, $rFiles)
+
 Write-Host "== 校验 =="
 $t = Read-Utf8 $tauri
 if ($t -notmatch ('"productName"\s*:\s*"' + [regex]::Escape($NewName) + '"')) {
@@ -194,7 +240,7 @@ if ($c -notmatch ('name\s*=\s*"' + [regex]::Escape($NewName) + '"')) {
     throw "Cargo.toml [[bin]] name 改写失败"
 }
 
-# 界面里不允许残留 SoloMD（字体族名除外；注意必须用 -cmatch，否则小写 solomd 也算命中）
+# 界面里不允许残留 SoloMD（字体族名除外；必须用 -cmatch，否则小写 solomd 也算命中）
 $leftovers = @()
 foreach ($f in $targets) {
     try { $t = Read-Utf8 $f.FullName } catch { continue }
@@ -216,8 +262,23 @@ $flags = Read-Utf8 (Join-Path $Root "app/src/lib/kjl-flags.ts")
 if ($flags -notmatch 'KJL_SUPPORT_PROMPTS = false') {
     throw "kjl-flags.ts 没有关闭赞助提示"
 }
-foreach ($p in @($settings, $about, $star)) {
+foreach ($p in @($settings, $about)) {
     if ((Read-Utf8 $p) -notmatch 'KJL_SUPPORT_PROMPTS') { throw ("赞助提示未处理：" + $p) }
 }
 
-Write-Host "OK: productName=$NewName, bin=$NewName, identifier=$Identifier, 界面品牌名已统一, 赞助提示已关闭"
+# Star 邀请必须开着，且指向本仓库
+if ($flags -notmatch 'KJL_STAR_PROMPT = true') { throw "kjl-flags.ts 没有开启 Star 提示" }
+if ((Read-Utf8 $star) -notmatch 'KJL_STAR_PROMPT') { throw "star-prompt.ts 未接入 Star 开关" }
+$appVue3 = Read-Utf8 $appVuePath
+if ($appVue3 -cnotmatch $repoSlug) { throw "App.vue 的 Star 提示未指向 $repoSlug" }
+if ($appVue3 -cmatch 'zhitongblog/solomd') { throw "App.vue 仍指向上游仓库" }
+
+# 打包层（Rust / NSIS / wix）不允许残留 SoloMD
+$rLeft = @()
+foreach ($f in $tauriFiles) {
+    try { $t = Read-Utf8 $f.FullName } catch { continue }
+    if ($t -cmatch 'SoloMD') { $rLeft += $f.FullName }
+}
+if ($rLeft.Count -gt 0) { throw ("打包层仍有 SoloMD 残留：" + ($rLeft -join "; ")) }
+
+Write-Host "OK: productName=$NewName, bin=$NewName, identifier=$Identifier, 界面品牌名已统一, 赞助已关闭, Star 邀请开启并指向 $repoSlug"
