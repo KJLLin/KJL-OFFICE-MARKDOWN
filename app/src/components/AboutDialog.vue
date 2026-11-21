@@ -86,7 +86,7 @@ watch(() => props.open, (o) => {
 
 const links = {
   website: 'https://github.com/KJLLin/KJL-OFFICE-MARKDOWN',
-  github: 'https://github.com/zhitongblog/solomd',
+  github: 'https://github.com/KJLLin/KJL-OFFICE-MARKDOWN',
   // Update/version-history surfaces point at solomd.app, not GitHub: the
   // site serves mainland users (Cloudflare edge + Gitee mirror links) where
   // github.com often doesn't resolve. Same policy as the update toast (#154).
@@ -159,7 +159,7 @@ async function visit(url: string) {
           <Icons class="about__link-icon" name="star" :size="16" />
           <div>
             <div class="about__link-title">Star on GitHub / 去 GitHub 点 Star</div>
-            <div class="about__link-url">zhitongblog/solomd</div>
+            <div class="about__link-url">KJLLin/KJL-OFFICE-MARKDOWN</div>
           </div>
           <Icons class="about__link-chev" name="chevron-right" :size="14" />
         </button>

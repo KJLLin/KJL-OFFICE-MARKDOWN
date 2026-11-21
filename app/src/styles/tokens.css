@@ -100,10 +100,10 @@
   /* Defaults for the long-standing variables (light). main.css re-states
      them; the named themes override them. */
   --bg: #ffffff;
-  --bg-elev: #f7f6f3;
-  --border: #e9e8e4;
-  --text: #1f1e1c;
-  --text-muted: #5e5b55;
+  --bg-elev: #f3f6fc;
+  --border: #e4eaf4;
+  --text: #16202e;
+  --text-muted: #566274;
   --accent: #2f74e9;
   --accent-fg: #ffffff;
 }
@@ -116,13 +116,13 @@
 
 /* ── 3a. exact 5.0 palette — default light ─────────────────────────────── */
 :root:not([data-custom-theme]):is(:not([data-theme]), [data-theme="light"]) {
-  --bg-sidebar: #f4f3f0;
+  --bg-sidebar: #f2f5fb;
   --bg-pop: #ffffff;
-  --fill-1: rgba(31, 30, 28, 0.05);
-  --fill-2: rgba(31, 30, 28, 0.08);
-  --hairline: rgba(31, 30, 28, 0.08);
-  --text-2: #5e5b55;
-  --text-3: #78756e;
+  --fill-1: rgba(20, 40, 80, 0.05);
+  --fill-2: rgba(20, 40, 80, 0.085);
+  --hairline: rgba(20, 40, 80, 0.09);
+  --text-2: #566274;
+  --text-3: #707d90;
   --accent-text: #1b5ed0;
   --accent-strong: #2a6be0;
   --accent-strong-fg: #ffffff;
@@ -132,13 +132,13 @@
 
 /* ── 3b. exact 5.0 palette — default dark ──────────────────────────────── */
 :root[data-theme="dark"]:not([data-custom-theme]) {
-  --bg-sidebar: #232325;
-  --bg-pop: #2c2c2f;
+  --bg-sidebar: #161d2a;
+  --bg-pop: #1f2737;
   --fill-1: rgba(255, 255, 255, 0.07);
   --fill-2: rgba(255, 255, 255, 0.11);
   --hairline: rgba(255, 255, 255, 0.08);
-  --text-2: #a9a6a0;
-  --text-3: #8c8984;
+  --text-2: #a2aec2;
+  --text-3: #818da1;
   --accent-text: #7cb0ff;
   --accent-strong: #4a90f7;
   --accent-strong-fg: #ffffff;

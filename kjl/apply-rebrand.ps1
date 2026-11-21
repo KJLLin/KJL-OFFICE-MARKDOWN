@@ -273,6 +273,7 @@ foreach ($p in @($settings, $about)) {
 
 # Star 邀请必须开着，且指向本仓库
 if ($flags -notmatch 'KJL_STAR_PROMPT = true') { throw "kjl-flags.ts 没有开启 Star 提示" }
+if ($flags -notmatch 'KJL_TELEMETRY_NOTICE = false') { throw "kjl-flags.ts 没有关闭首启遥测提示" }
 if ((Read-Utf8 $star) -notmatch 'KJL_STAR_PROMPT') { throw "star-prompt.ts 未接入 Star 开关" }
 $appVue3 = Read-Utf8 $appVuePath
 if ($appVue3 -cnotmatch $repoSlug) { throw "App.vue 的 Star 提示未指向 $repoSlug" }
