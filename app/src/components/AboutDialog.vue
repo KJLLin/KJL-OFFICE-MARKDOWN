@@ -85,7 +85,7 @@ watch(() => props.open, (o) => {
 }, { immediate: true });
 
 const links = {
-  website: 'https://solomd.app',
+  website: 'https://github.com/KJLLin/KJL-OFFICE-MARKDOWN',
   github: 'https://github.com/zhitongblog/solomd',
   // Update/version-history surfaces point at solomd.app, not GitHub: the
   // site serves mainland users (Cloudflare edge + Gitee mirror links) where
@@ -151,7 +151,7 @@ async function visit(url: string) {
           <Icons class="about__link-icon" name="globe" :size="16" />
           <div>
             <div class="about__link-title">Website / 官网</div>
-            <div class="about__link-url">solomd.app</div>
+            <div class="about__link-url">github.com/KJLLin/KJL-OFFICE-MARKDOWN</div>
           </div>
           <Icons class="about__link-chev" name="chevron-right" :size="14" />
         </button>

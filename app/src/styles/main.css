@@ -23,7 +23,7 @@
   /* brand */
   --brand-bg: #000000;
   --brand-fg: #ffffff;
-  --brand-accent: #ff9f40;
+  --brand-accent: #3a8cf2;
 
   /* light theme (default) — v4.6 warm-neutral surfaces (plan §2.4).
      --bg / --bg-elev / --border / --text / --text-muted are seeded in
@@ -37,8 +37,8 @@
   --text: #1f1e1c;
   --text-muted: #5e5b55;
   --text-faint: #9a978f;
-  --accent: #e07b39;
-  --accent-fg: #1a1a1a;
+  --accent: #2f74e9;
+  --accent-fg: #ffffff;
   --danger: #d64545;
 
   /* v4.6 F2 — type-section accent palette (types-as-lenses). Six fixed
@@ -60,7 +60,7 @@
   --md-h6: #6b5b7b;
   --md-strong: #1f1e1c;
   --md-em: #1f1e1c;
-  --md-link: #b4561b;
+  --md-link: #1b5ed0;
   --md-url: #78756e;
   --md-code: #1f1e1c;
   --md-code-bg: #f3f4f6;
@@ -136,8 +136,8 @@
   --text: #eceae6;
   --text-muted: #a9a6a0;
   --text-faint: #6f6c68;
-  --accent: #f0965a;
-  --accent-fg: #1a1a1a;
+  --accent: #4a90f7;
+  --accent-fg: #ffffff;
 
   /* v4.6 F2 — type-section accent palette (dark, slightly lifted for
      contrast on the dark sidebar background). */
@@ -157,7 +157,7 @@
   --md-h6: #d2a8ff;
   --md-strong: #f2f0ec;
   --md-em: #eceae6;
-  --md-link: #f4a26b;
+  --md-link: #7cb0ff;
   --md-url: #8c8984;
   --md-code: #eceae6;
   --md-code-bg: #24262a;
