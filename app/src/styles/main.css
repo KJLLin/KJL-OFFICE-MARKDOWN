@@ -58,17 +58,17 @@
   --md-h4: #2d6a4f;
   --md-h5: #7c4d12;
   --md-h6: #6b5b7b;
-  --md-strong: #1f1e1c;
-  --md-em: #1f1e1c;
+  --md-strong: #16202e;
+  --md-em: #16202e;
   --md-link: #1b5ed0;
-  --md-url: #78756e;
-  --md-code: #1f1e1c;
+  --md-url: #707d90;
+  --md-code: #16202e;
   --md-code-bg: #f3f4f6;
-  --md-quote: #555049;
-  --md-quote-bg: #fcf8f1;
-  --md-quote-border: #e07b39;
-  --md-list: #78756e;
-  --md-hr: #dedcd6;
+  --md-quote: #4e5a6b;
+  --md-quote-bg: #f4f7fd;
+  --md-quote-border: #3a8cf2;
+  --md-list: #707d90;
+  --md-hr: #dfe6f0;
 
   /* Code block syntax (light) — gentle, not garish */
   --syn-keyword: #a626a4;
@@ -155,17 +155,17 @@
   --md-h4: #7ee787;
   --md-h5: #f2cc60;
   --md-h6: #d2a8ff;
-  --md-strong: #f2f0ec;
-  --md-em: #eceae6;
+  --md-strong: #eef3fb;
+  --md-em: #e9eff8;
   --md-link: #7cb0ff;
-  --md-url: #8c8984;
-  --md-code: #eceae6;
+  --md-url: #8794a7;
+  --md-code: #e9eff8;
   --md-code-bg: #24262a;
-  --md-quote: #b8b3ab;
-  --md-quote-bg: #2b2722;
-  --md-quote-border: #f0965a;
-  --md-list: #8c8984;
-  --md-hr: #3a3a3d;
+  --md-quote: #aeb9c9;
+  --md-quote-bg: #202836;
+  --md-quote-border: #5a9bff;
+  --md-list: #8794a7;
+  --md-hr: #38455a;
 
   /* Code block syntax (dark) */
   --syn-keyword: #c678dd;
