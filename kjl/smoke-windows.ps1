@@ -151,7 +151,7 @@ Log "  卸载 NSIS 版本"
 $uninstFile = Get-ChildItem $appDir -Filter 'uninstall*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $uninstFile) { throw "找不到卸载程序（uninstall*.exe）" }
 $uninst = $uninstFile.FullName
-Log "  卸载程序: $($uninstFile.Name)
+Log "  卸载程序: $($uninstFile.Name)"
 $u = Start-Process -FilePath $uninst -ArgumentList '/S' -Wait -PassThru
 Log "  卸载器退出码: $($u.ExitCode)"
 $gone = $false
