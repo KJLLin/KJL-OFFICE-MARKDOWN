@@ -654,7 +654,7 @@ async function buildBody(
                 after: idx === last ? 160 : 0,
               },
               border: {
-                left: { style: BorderStyle.SINGLE, size: 18, color: 'FF9F40', space: 6 },
+                left: { style: BorderStyle.SINGLE, size: 18, color: '3A8CF2', space: 6 },
               },
             })
           );
@@ -728,7 +728,7 @@ async function buildBody(
                 indent: { left: 360 },
                 spacing: { before: 80, after: 80 },
                 border: {
-                  left: { style: BorderStyle.SINGLE, size: 18, color: 'FF9F40', space: 8 },
+                  left: { style: BorderStyle.SINGLE, size: 18, color: '3A8CF2', space: 8 },
                 },
               })
             );
