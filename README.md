@@ -1,4 +1,9 @@
-# SoloMD
+# KJL-OFFICE
+
+> 基于上游 **SoloMD**（作者 xiangdong li，[MIT 许可](LICENSE)）改造的本地 Markdown / 纯文本编辑器。
+> 上游项目：<https://github.com/zhitongblog/solomd> · 本项目安装包见 [Releases](https://github.com/KJLLin/KJL-OFFICE-MARKDOWN/releases)。
+> 以下为上游 SoloMD 的原始说明，予以保留，用以说明功能来源、许可与致谢。
+
 
 > All the calm of Typora. Plus 5-platform vault sync, 9-format export & local AI — free.
 

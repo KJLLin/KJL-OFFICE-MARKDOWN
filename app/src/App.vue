@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { documentDir } from '@tauri-apps/api/path';
 import { openPath, openUrl } from '@tauri-apps/plugin-opener';
 import { recordDay, shouldPrompt, type StarPromptState } from './lib/star-prompt';
+import { KJL_UPDATE_SETTINGS } from './lib/kjl-flags';
 import { readText as readClipboardText } from '@tauri-apps/plugin-clipboard-manager';
 import { setMarkdownHardBreaks, setMarkdownAutoNumberHeadings, setMarkdownSmartQuotes } from './lib/markdown';
 import { openNewWindow } from './lib/new-window';
@@ -1807,7 +1808,7 @@ onMounted(async () => {
 
   // Auto-check for updates — once startup has settled; nobody waits on it,
   // and it shouldn't share the main thread with the first keystrokes.
-  if (!isIOS() && settings.autoCheckUpdate) runWhenIdle(() => void checkForUpdatesNow());
+  if (!isIOS() && KJL_UPDATE_SETTINGS && settings.autoCheckUpdate) runWhenIdle(() => void checkForUpdatesNow());
 });
 
 async function checkForUpdatesNow(): Promise<void> {
