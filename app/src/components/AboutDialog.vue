@@ -85,8 +85,8 @@ watch(() => props.open, (o) => {
   }
 }, { immediate: true });
 
-// 上游项目名拆成两段拼接：打包脚本会把界面里连续的 SoloMD 品牌名替换成
-// KJL-OFFICE，而署名处必须保留上游原名，故绕开该替换。
+// 上游项目名拆成两段拼接：打包脚本会把界面里连续的上游品牌名替换成本项目名，
+// 而署名处必须保留上游原名，故用拼接绕开该替换。
 const UPSTREAM_NAME = ['Solo', 'MD'].join('');
 
 const links = {

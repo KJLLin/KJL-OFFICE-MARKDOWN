@@ -52,7 +52,7 @@ import ProxySettings from './ProxySettings.vue';
 import LanguageToolSettings from './LanguageToolSettings.vue';
 import ThemeMarketplace from './ThemeMarketplace.vue';
 import SupportDialog from './SupportDialog.vue';
-import { KJL_TELEMETRY_SETTINGS, KJL_UPDATE_SETTINGS } from '../lib/kjl-flags';
+import { KJL_SUPPORT_PROMPTS, KJL_TELEMETRY_SETTINGS, KJL_UPDATE_SETTINGS } from '../lib/kjl-flags';
 import { supporterRecord, badgeInfo, initSupporterState } from '../lib/supporter';
 import { isIOS, isMobile, hasGitBackend, isWindowsEditorRuntime, resolveWindowsEditorEngine } from '../lib/platform';
 import type { WindowsEditorEngine } from '../lib/platform';
@@ -1129,7 +1129,7 @@ function onSelectPdfFont(v: string) {
               <span class="settings__nav-label">{{ t(c.labelKey) }}</span>
             </button>
           </template>
-          <div class="settings__nav-supporter-wrap">
+          <div v-if="KJL_SUPPORT_PROMPTS" class="settings__nav-supporter-wrap">
             <button
               type="button"
               class="settings__nav-item settings__nav-supporter"
@@ -1309,6 +1309,7 @@ function onSelectPdfFont(v: string) {
 
         <!-- Supporter micro-guide card on the first page (Option A) -->
         <div
+          v-if="KJL_SUPPORT_PROMPTS"
           data-cat="basics"
           class="settings__supporter-guide"
           :class="{ 'settings__supporter-guide--active': Boolean(activeSupporterBadge) }"
@@ -3163,6 +3164,7 @@ function onSelectPdfFont(v: string) {
       @close="themeMarketplaceOpen = false"
     />
     <SupportDialog
+      v-if="KJL_SUPPORT_PROMPTS"
       :open="supportModalOpen"
       @close="supportModalOpen = false"
     />

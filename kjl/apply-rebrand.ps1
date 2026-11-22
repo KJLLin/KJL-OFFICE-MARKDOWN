@@ -190,7 +190,10 @@ function ReplaceLiteral([string]$Path, [string]$From, [string]$To, [string]$Labe
 }
 
 ReplaceLiteral $appVuePath "https://github.com/zhitongblog/solomd" $repoUrl "Star 提示 -> 本仓库"
-ReplaceLiteral $about "zhitongblog/solomd" $repoSlug "关于页 GitHub 链接/文案"
+# 关于页的 GitHub 链接已在源码里指向本仓库；此处只校验，不再做字面替换，
+# 以免把「上游项目」署名链接一并改掉。
+if ((Read-Utf8 $about) -cnotmatch [regex]::Escape($repoSlug)) { throw "关于页 GitHub 链接未指向 $repoSlug" }
+if ((Read-Utf8 $about) -cnotmatch "github.com/zhitongblog/solomd") { throw "关于页缺少上游项目署名链接" }
 ReplaceLiteral $about "https://solomd.app/whats-new" ($repoUrl + "/releases") "关于页更新日志 -> 本仓库 Releases"
 ReplaceLiteral (Join-Path $Root "app/src/i18n/zh.ts") `
     "觉得 KJL-OFFICE 好用？去 GitHub 点个 Star 吧——它由一个人开发、免费开源，Star 能让更多人发现它。" `
