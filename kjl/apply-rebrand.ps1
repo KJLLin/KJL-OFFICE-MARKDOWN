@@ -177,7 +177,7 @@ PatchOnce $about '<SupportDialog v-if="KJL_SUPPORT_PROMPTS"' `
     "关于页 SupportDialog"
 
 # —— Star 邀请与关于页链接指向本仓库 ——
-$repoSlug = "KJLLin/KJL-OFFICE-MARKDOWN"
+$repoSlug = "KJLLin/KJL-OFFICE-Markdown"
 $repoUrl  = "https://github.com/" + $repoSlug
 $appVuePath = Join-Path $Root "app/src/App.vue"
 

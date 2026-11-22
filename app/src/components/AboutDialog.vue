@@ -90,13 +90,13 @@ watch(() => props.open, (o) => {
 const UPSTREAM_NAME = ['Solo', 'MD'].join('');
 
 const links = {
-  website: 'https://github.com/KJLLin/KJL-OFFICE-MARKDOWN',
-  github: 'https://github.com/KJLLin/KJL-OFFICE-MARKDOWN',
+  website: 'https://github.com/KJLLin/KJL-OFFICE-Markdown',
+  github: 'https://github.com/KJLLin/KJL-OFFICE-Markdown',
   // 本构建自己发版，更新日志直接指向本仓库的 Releases 页。
-  releases: 'https://github.com/KJLLin/KJL-OFFICE-MARKDOWN/releases',
+  releases: 'https://github.com/KJLLin/KJL-OFFICE-Markdown/releases',
   upstream: 'https://github.com/zhitongblog/solomd',
-  sponsor: 'https://github.com/KJLLin/KJL-OFFICE-MARKDOWN',
-  promote: 'https://github.com/KJLLin/KJL-OFFICE-MARKDOWN',
+  sponsor: 'https://github.com/KJLLin/KJL-OFFICE-Markdown',
+  promote: 'https://github.com/KJLLin/KJL-OFFICE-Markdown',
 };
 
 // NOTE: this function intentionally is NOT named `open` because that
@@ -155,7 +155,7 @@ async function visit(url: string) {
           <Icons class="about__link-icon" name="globe" :size="16" />
           <div>
             <div class="about__link-title">Website / 官网</div>
-            <div class="about__link-url">github.com/KJLLin/KJL-OFFICE-MARKDOWN</div>
+            <div class="about__link-url">github.com/KJLLin/KJL-OFFICE-Markdown</div>
           </div>
           <Icons class="about__link-chev" name="chevron-right" :size="14" />
         </button>
@@ -163,7 +163,7 @@ async function visit(url: string) {
           <Icons class="about__link-icon" name="star" :size="16" />
           <div>
             <div class="about__link-title">Star on GitHub / 去 GitHub 点 Star</div>
-            <div class="about__link-url">KJLLin/KJL-OFFICE-MARKDOWN</div>
+            <div class="about__link-url">KJLLin/KJL-OFFICE-Markdown</div>
           </div>
           <Icons class="about__link-chev" name="chevron-right" :size="14" />
         </button>
@@ -171,7 +171,7 @@ async function visit(url: string) {
           <Icons class="about__link-icon" name="sparkle" :size="16" />
           <div>
             <div class="about__link-title">Releases / 更新日志</div>
-            <div class="about__link-url">github.com/KJLLin/KJL-OFFICE-MARKDOWN/releases</div>
+            <div class="about__link-url">github.com/KJLLin/KJL-OFFICE-Markdown/releases</div>
           </div>
           <Icons class="about__link-chev" name="chevron-right" :size="14" />
         </button>
