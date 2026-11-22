@@ -1,0 +1,35 @@
+name: Installer smoke (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to install & launch (e.g. kjl-build-15)'
+        required: true
+        default: 'kjl-build-15'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout (workflow scripts)
+        uses: actions/checkout@v4
+
+      - name: Install / launch / uninstall smoke test
+        shell: pwsh
+        run: |
+          ./kjl/smoke-windows.ps1 -Tag '${{ inputs.tag }}' -Repo '${{ github.repository }}' -OutDir "$env:RUNNER_TEMP\smoke"
+
+      - name: Upload logs & screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke-${{ inputs.tag }}
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: warn
