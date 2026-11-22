@@ -148,8 +148,10 @@ Launch-And-Inspect (Join-Path $appDir 'KJL-OFFICE.exe') 'installed-nsis'
 
 Log ""
 Log "  卸载 NSIS 版本"
-$uninst = Join-Path $appDir 'Uninstall KJL-OFFICE.exe'
-if (-not (Test-Path $uninst)) { throw "找不到卸载程序 Uninstall KJL-OFFICE.exe" }
+$uninstFile = Get-ChildItem $appDir -Filter 'uninstall*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $uninstFile) { throw "找不到卸载程序（uninstall*.exe）" }
+$uninst = $uninstFile.FullName
+Log "  卸载程序: $($uninstFile.Name)
 $u = Start-Process -FilePath $uninst -ArgumentList '/S' -Wait -PassThru
 Log "  卸载器退出码: $($u.ExitCode)"
 $gone = $false
