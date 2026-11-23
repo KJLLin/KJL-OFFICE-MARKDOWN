@@ -128,6 +128,10 @@
   --accent-strong-fg: #ffffff;
   --accent-soft: rgba(47, 116, 233, 0.13);
   --select-inactive: rgba(31, 30, 28, 0.08);
+  /* KJL-OFFICE: active editing line — brand tint at 7%, kept below
+     --accent-soft (13%) so a text selection still reads on top of it.
+     Overrides the upstream pink in :root. Named light themes keep the pink. */
+  --active-line-bg: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 /* ── 3b. exact 5.0 palette — default dark ──────────────────────────────── */
@@ -144,6 +148,8 @@
   --accent-strong-fg: #ffffff;
   --accent-soft: rgba(74, 144, 247, 0.18);
   --select-inactive: rgba(255, 255, 255, 0.1);
+  /* KJL-OFFICE: active line, dark — 14% of the theme accent. */
+  --active-line-bg: color-mix(in srgb, var(--accent) 14%, transparent);
 
   --sh-1: 0 1px 2px rgba(0, 0, 0, 0.3);
   --sh-2: 0 4px 12px rgba(0, 0, 0, 0.3);
