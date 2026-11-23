@@ -7988,16 +7988,28 @@ const cls = computed(() => ({
 .plain-block--active {
   background: var(--bg);
 }
-/* #467 / #486 — active editing line/block tint in non-dark and dark modes. */
-.plain-block-editor--hl-line .plain-block--active,
-.plain-block-editor--hl-line .plain-block--active .plain-block__textarea {
-  background: var(--active-line-bg, color-mix(in srgb, #f48fb1 24%, color-mix(in srgb, var(--accent) 10%, var(--bg))));
-  border-radius: 3px;
+/* #467 / #486 — active editing line/block tint in non-dark and dark modes.
+   KJL-OFFICE: tinted with the brand blue instead of the upstream pink. 7% in
+   light / 14% in dark stays below --accent-soft (13%) on purpose, so a text
+   selection laid over the active block is still legible. The 2px rule is
+   drawn as a border with an equal negative margin, which keeps the text box
+   in exactly the same place it sits when the block is inactive (no jitter on
+   click). Only the block carries the fill: the textarea is transparent so the
+   two layers cannot stack into a darker, unintended shade. */
+.plain-block-editor--hl-line .plain-block--active {
+  background: var(--active-line-bg, color-mix(in srgb, var(--accent) 7%, transparent));
+  border-left: 2px solid var(--custom-active-line, var(--accent));
+  margin-left: -2px;
+  border-radius: 0 3px 3px 0;
 }
-.cm-host--dark.plain-block-editor--hl-line .plain-block--active,
+.plain-block-editor--hl-line .plain-block--active .plain-block__textarea {
+  background: transparent;
+}
+.cm-host--dark.plain-block-editor--hl-line .plain-block--active {
+  background: var(--active-line-bg, color-mix(in srgb, var(--accent) 14%, transparent));
+}
 .cm-host--dark.plain-block-editor--hl-line .plain-block--active .plain-block__textarea {
-  background: var(--active-line-bg, color-mix(in srgb, #f48fb1 16%, color-mix(in srgb, var(--accent) 14%, var(--bg))));
-  border-radius: 3px;
+  background: transparent;
 }
 /* #316 — focus mode in the block live editor: one element per paragraph
    already exists, so the inactive ones just dim. Same 0.35 the CodeMirror
