@@ -156,12 +156,12 @@ test('every menu id is something App.vue can dispatch', () => {
   const menuOnly = new Set([
     'file.openFolder', 'file.autoSave', 'recent.clear', 'recent.none', 'view.darkMode',
     'view.zoomPreviewIn', 'view.zoomPreviewOut', 'view.zoomPreviewReset', 'help.shortcuts', 'help.cli',
-    'help.checkUpdate', 'help.about', 'edit.find', 'edit.replace', 'edit.undo', 'edit.redo', 'edit.cut', 'edit.copy',
+    'help.checkUpdate', 'help.about', 'help.openLogDir', 'help.exportLogs', 'edit.find', 'edit.replace', 'edit.undo', 'edit.redo', 'edit.cut', 'edit.copy',
     'edit.paste', 'edit.selectAll', 'insert.mathBlock', 'insert.mathInline', 'insert.table',
     'insert.mermaid', 'insert.hr',
     // palette commands
     'export.html', 'export.docx', 'export.pdf', 'export.image', 'clean.aiArtifacts',
-    'view.toggleSpellCheck', 'view.toggleLivePreview', 'view.toggleFitWidth', 'pomodoro.open',
+    'view.toggleSpellCheck', 'view.toggleLivePreview', 'view.toggleFitWidth', 'view.toggleFormatBar', 'pomodoro.open',
     'editor.insertImage', 'editor.insertImageUrl',
     // palette commands reached through the dispatchMenuAction fallback
     ...PALETTE_MENU_IDS,

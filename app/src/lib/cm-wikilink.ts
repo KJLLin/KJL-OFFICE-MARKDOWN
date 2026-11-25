@@ -170,11 +170,11 @@ const wikilinkTheme = EditorView.theme({
     transition: 'background 0.12s',
   },
   '.cm-wikilink--ok': {
-    color: 'var(--accent, #ff9f40)',
-    backgroundColor: 'color-mix(in srgb, var(--accent, #ff9f40) 12%, transparent)',
+    color: 'var(--accent, #3a8cf2)',
+    backgroundColor: 'color-mix(in srgb, var(--accent, #3a8cf2) 12%, transparent)',
   },
   '.cm-wikilink--ok:hover': {
-    backgroundColor: 'color-mix(in srgb, var(--accent, #ff9f40) 22%, transparent)',
+    backgroundColor: 'color-mix(in srgb, var(--accent, #3a8cf2) 22%, transparent)',
     textDecoration: 'underline',
   },
   '.cm-wikilink--missing': {

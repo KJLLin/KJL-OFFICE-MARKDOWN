@@ -198,7 +198,7 @@ onBeforeUnmount(() => {
 }
 .spellcheck-menu__item:hover,
 .spellcheck-menu__item:focus-visible {
-  background: var(--accent, #ff9f40);
+  background: var(--accent, #3a8cf2);
   color: var(--accent-fg, #fff);
   outline: none;
 }

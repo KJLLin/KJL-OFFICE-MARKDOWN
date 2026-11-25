@@ -192,3 +192,51 @@ test('indentCodeBlockPaste pads subsequent pasted lines with the code fence inde
   const outAtCol0 = indentCodeBlockPaste(docWithCol0BlankLine, cursorAtCol0, cursorAtCol0, snippet);
   assert.equal(outAtCol0, `${indent8}function hello() {\n${indent8}  return 1;\n${indent8}}`);
 });
+
+test('indentCodeBlockPaste aligns every row of a pasted Markdown table to list soft-break indentation', () => {
+  const table = '| A | B |\n| --- | --- |\n| 1 | 2 |';
+
+  // Ordered list soft-break (3 spaces)
+  const olDoc = '1. 列表项\n   ';
+  assert.equal(
+    indentCodeBlockPaste(olDoc, olDoc.length, olDoc.length, table),
+    '| A | B |\n   | --- | --- |\n   | 1 | 2 |',
+  );
+
+  // Unordered list soft-break (2 spaces), pasting an already-indented table dedents first
+  const ulDoc = '- 列表项\n  ';
+  const preIndentedTable = '    | A | B |\n    | --- | --- |\n    | 1 | 2 |\n';
+  assert.equal(
+    indentCodeBlockPaste(ulDoc, ulDoc.length, ulDoc.length, preIndentedTable),
+    '| A | B |\n  | --- | --- |\n  | 1 | 2 |\n',
+  );
+
+  // Blockquote list soft-break (`>   `)
+  const quoteDoc = '> - 引用列表\n>   ';
+  assert.equal(
+    indentCodeBlockPaste(quoteDoc, quoteDoc.length, quoteDoc.length, table),
+    '| A | B |\n>   | --- | --- |\n>   | 1 | 2 |',
+  );
+
+  // Pasting plain non-table text on a soft-break line is untouched
+  assert.equal(
+    indentCodeBlockPaste(olDoc, olDoc.length, olDoc.length, 'line 1\nline 2'),
+    'line 1\nline 2',
+  );
+});
+
+test('#669: autoNumberHeadings never strips bare years or date prefixes from headings', () => {
+  const doc = '# 2026 年度总结\n## 2026.11.23 发布记录\n### 01.05 里程碑';
+  const eAdd = autoNumberHeadings(doc, 0, 0, 'add');
+  assert.ok(eAdd);
+  const afterAdd = doc.slice(0, eAdd!.from) + eAdd!.insert + doc.slice(eAdd!.to);
+  assert.equal(
+    afterAdd,
+    '# 1. 2026 年度总结\n## 1.1 2026.11.23 发布记录\n### 1.1.1 01.05 里程碑',
+  );
+  // Removing heading numbers restores the original years/dates intact
+  const eRem = autoNumberHeadings(afterAdd, 0, 0, 'remove');
+  assert.ok(eRem);
+  const afterRem = afterAdd.slice(0, eRem!.from) + eRem!.insert + afterAdd.slice(eRem!.to);
+  assert.equal(afterRem, doc);
+});

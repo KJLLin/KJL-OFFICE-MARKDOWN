@@ -1309,6 +1309,15 @@ defineExpose({ scrollToLine, openSearch });
 }
 :where(.preview-content) blockquote > :first-child { margin-top: 0; }
 :where(.preview-content) blockquote > :last-child { margin-bottom: 0; }
+/* #678 — Align list markers inside blockquotes with plain blockquote text. */
+:where(.preview-content) blockquote ul,
+:where(.preview-content) blockquote ol {
+  padding-left: 1.3em;
+  margin: 0.35em 0;
+}
+:where(.preview-content) blockquote ul.contains-task-list {
+  padding-left: 0;
+}
 :where(.preview-content) ul,
 :where(.preview-content) ol {
   padding-left: 1.8em;
@@ -1362,6 +1371,10 @@ defineExpose({ scrollToLine, openSearch });
   border-top: 1px solid var(--hairline);
   margin: 2em 0;
 }
+:where(.preview-content) p:has(> img:only-child),
+:where(.preview-content) p:has(> a:only-child > img:only-child) {
+  text-align: var(--media-align, left);
+}
 :where(.preview-content) img {
   max-width: 100%;
   border-radius: 4px;
@@ -1373,7 +1386,7 @@ defineExpose({ scrollToLine, openSearch });
 }
 :where(.preview-content) .mermaid-block {
   display: flex;
-  justify-content: flex-start;
+  justify-content: var(--media-justify, flex-start);
   margin: 1.5em 0;
   cursor: zoom-in;
   transition: opacity 0.15s;
@@ -1381,8 +1394,12 @@ defineExpose({ scrollToLine, openSearch });
 /* v4.10 #163 — PlantUML server-rendered diagrams. */
 :where(.preview-content) .plantuml-block {
   display: flex;
-  justify-content: center;
+  justify-content: var(--media-justify, flex-start);
   margin: 1.5em 0;
+}
+:where(.preview-content) .katex-display,
+:where(.preview-content) .katex-display > .katex {
+  text-align: var(--media-align, left);
 }
 :where(.preview-content) .plantuml-block img {
   max-width: 100%;
@@ -1424,11 +1441,11 @@ defineExpose({ scrollToLine, openSearch });
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 :where(.preview-content) .whiteboard-block--clickable:hover {
-  border-color: var(--accent, #ff9f40);
-  box-shadow: 0 0 0 1px var(--accent, #ff9f40);
+  border-color: var(--accent, #3a8cf2);
+  box-shadow: 0 0 0 1px var(--accent, #3a8cf2);
 }
 :where(.preview-content) .whiteboard-block--clickable:focus-visible {
-  outline: 2px solid var(--accent, #ff9f40);
+  outline: 2px solid var(--accent, #3a8cf2);
   outline-offset: 2px;
 }
 :where(.preview-content) .whiteboard-block--empty {
@@ -1452,7 +1469,7 @@ defineExpose({ scrollToLine, openSearch });
 /* Wikilinks (F1, v2.0) */
 .preview-content .md-wikilink {
   color: var(--accent-text);
-  background: color-mix(in srgb, var(--accent, #ff9f40) 10%, transparent);
+  background: color-mix(in srgb, var(--accent, #3a8cf2) 10%, transparent);
   padding: 1px 5px;
   border-radius: 4px;
   text-decoration: none;
@@ -1461,7 +1478,7 @@ defineExpose({ scrollToLine, openSearch });
   transition: background 0.12s;
 }
 .preview-content .md-wikilink:hover {
-  background: color-mix(in srgb, var(--accent, #ff9f40) 22%, transparent);
+  background: color-mix(in srgb, var(--accent, #3a8cf2) 22%, transparent);
   text-decoration: underline;
 }
 /* Preview search highlights */
@@ -1547,7 +1564,7 @@ defineExpose({ scrollToLine, openSearch });
   transition: background 0.12s ease;
 }
 :where(.preview-content) .md-math-block:hover {
-  background: color-mix(in srgb, var(--accent, #ff9f40) 12%, transparent);
+  background: color-mix(in srgb, var(--accent, #3a8cf2) 12%, transparent);
 }
 /* Popover + backdrop are Preview's own nodes (not v-html). */
 .math-edit-backdrop {
@@ -1592,7 +1609,7 @@ defineExpose({ scrollToLine, openSearch });
   outline: none;
 }
 .math-edit-area:focus {
-  border-color: var(--accent, #ff9f40);
+  border-color: var(--accent, #3a8cf2);
 }
 .math-edit-actions {
   display: flex;
@@ -1612,8 +1629,8 @@ defineExpose({ scrollToLine, openSearch });
   background: color-mix(in srgb, var(--text, #000) 6%, transparent);
 }
 .math-edit-btn--primary {
-  background: var(--accent, #ff9f40);
-  border-color: var(--accent, #ff9f40);
+  background: var(--accent, #3a8cf2);
+  border-color: var(--accent, #3a8cf2);
   color: #000;
 }
 .math-edit-btn--primary:hover {

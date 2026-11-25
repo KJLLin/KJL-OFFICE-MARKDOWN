@@ -499,7 +499,7 @@ onBeforeUnmount(() => {
   --slide-hud-strong: rgba(255, 255, 255, 0.85);
   --slide-btn-bg: rgba(255, 255, 255, 0.08);
   --slide-btn-hover: rgba(255, 255, 255, 0.16);
-  --slide-accent: #ff9f40;
+  --slide-accent: #3a8cf2;
   position: fixed;
   inset: 0;
   background: var(--slide-bg);
@@ -518,7 +518,7 @@ onBeforeUnmount(() => {
   --slide-hud-strong: rgba(31, 30, 28, 0.85);
   --slide-btn-bg: rgba(31, 30, 28, 0.06);
   --slide-btn-hover: rgba(31, 30, 28, 0.12);
-  --slide-accent: #b4561b;
+  --slide-accent: #1b5ed0;
 }
 /*
  * Reveal injects its own classes (.reveal, .slides). We override visuals
