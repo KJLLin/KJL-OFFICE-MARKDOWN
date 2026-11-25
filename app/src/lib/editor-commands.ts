@@ -409,10 +409,54 @@ export function indentCodeBlockPaste(
     matchedIndent = openFence.indent;
   }
 
-  if (!matchedIndent) return rawText;
-
   const firstLineStart = selFrom > 0 ? doc.lastIndexOf('\n', selFrom - 1) + 1 : 0;
   const prefixBefore = doc.slice(firstLineStart, selFrom);
+
+  if (!matchedIndent) {
+    // When pasting a Markdown table onto a list/quote soft-break indented line
+    // (e.g. `1. item\n   |` or `- item\n  |` or `> - item\n>   |`), align every
+    // subsequent row of the pasted table to the same indentation so both Live
+    // Edit and Preview render it cleanly inside the enclosing list item.
+    if (/^(?:[ \t]*(?:>[ \t]?)*)[ \t]+$/.test(prefixBefore)) {
+      const normalizedTable = rawText.replace(/\r\n?/g, '\n');
+      const tableLines = normalizedTable.split('\n');
+      const nonEmpty = tableLines.filter((l) => l.trim().length > 0);
+      const isTableSep = (s: string) =>
+        /^[ \t]*\|?[ \t]*:?-{1,}:?[ \t]*(?:\|[ \t]*:?-{1,}:?[ \t]*)+\|?[ \t]*$/.test(s) ||
+        /^[ \t]*\|[ \t]*:?-{1,}:?[ \t]*\|[ \t]*$/.test(s);
+      if (
+        nonEmpty.length >= 2 &&
+        nonEmpty[0].includes('|') &&
+        !isTableSep(nonEmpty[0]) &&
+        isTableSep(nonEmpty[1])
+      ) {
+        // Dedent any common leading spaces/tabs from the pasted table first so
+        // copying a table from one list depth into another never double-indents.
+        let sharedLead: string | null = null;
+        for (const l of nonEmpty) {
+          const lead = /^[ \t]*/.exec(l)?.[0] ?? '';
+          if (sharedLead === null) {
+            sharedLead = lead;
+          } else {
+            let k = 0;
+            while (k < sharedLead.length && k < lead.length && sharedLead[k] === lead[k]) k++;
+            sharedLead = sharedLead.slice(0, k);
+          }
+        }
+        const stripLen = sharedLead?.length ?? 0;
+        return tableLines
+          .map((line, idx) => {
+            const stripped = stripLen > 0 && line.length >= stripLen ? line.slice(stripLen) : line;
+            if (idx === 0) return stripped;
+            if (stripped.length === 0) return '';
+            return `${prefixBefore}${stripped}`;
+          })
+          .join('\n');
+      }
+    }
+    return rawText;
+  }
+
   let missingFirst = '';
   if (
     /^[ \t]*$/.test(prefixBefore) &&
@@ -543,7 +587,13 @@ function contentStart(line: string): number {
   return m ? m[0].length : line.length - line.trimStart().length;
 }
 
-const HEADING_NUM_PREFIX = /^(\d+(?:\.\d+)*\.?[ \t]+)/;
+// #669 — Match only genuine heading-number prefixes (`1. `, `1.1 `, `1.1.1 `)
+// produced by autoNumberHeadings:
+//  - Single-segment prefix MUST have a trailing dot (`1. `..`999. `), never a
+//    bare number (`2026 年度总结`) or 4-digit year (`2026.`).
+//  - Multi-segment prefix rejects 4-digit years (`2026.11.23 `) and leading-zero
+//    dates (`01.05 `, `2026.05.01 `).
+const HEADING_NUM_PREFIX = /^(?:[1-9]\d{0,2}\.[ \t]+|[1-9]\d{0,2}(?:\.[1-9]\d{0,2})+\.?[ \t]+)/;
 
 /**
  * #474 — Automatically number (or renumber / unnumber) multi-level ATX

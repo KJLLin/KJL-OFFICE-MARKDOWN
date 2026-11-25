@@ -9,11 +9,96 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static SYNC_APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+static SYNC_DATA_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+static SYNC_LOG_LOCK: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+const SYNC_LOG_RETENTION_DAYS: i64 = 30;
+
+/// #636 — Initialize the global sync AppHandle (and optional portable-mode app_data_dir)
+/// once at app startup so sync logs from GitHub/conflict resolution are never dropped.
+pub fn init_sync_app_handle(app: &tauri::AppHandle, data_dir_override: Option<PathBuf>) {
+    let _ = SYNC_APP_HANDLE.set(app.clone());
+    if let Some(dir) = data_dir_override {
+        let _ = SYNC_DATA_DIR_OVERRIDE.set(dir);
+    }
+}
+
+fn resolve_sync_log_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    let base = if let Some(dir) = SYNC_DATA_DIR_OVERRIDE.get() {
+        dir.clone()
+    } else {
+        app.path()
+            .app_data_dir()
+            .map_err(|e| format!("failed to resolve app data dir: {e}"))?
+    };
+    let dir = base.join("logs");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create logs dir: {e}"))?;
+    Ok(dir)
+}
+
+fn prune_old_sync_logs(log_dir: &Path, today: chrono::NaiveDate) {
+    let Ok(entries) = std::fs::read_dir(log_dir) else {
+        return;
+    };
+    let cutoff = today - chrono::Duration::days(SYNC_LOG_RETENTION_DAYS);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if let Some(date_str) = name
+            .strip_prefix("sync-")
+            .and_then(|s| s.strip_suffix(".log"))
+        {
+            if let Ok(d) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                if d < cutoff {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
+}
+
+/// #636 — Append one timestamped line to `<app_data_dir>/logs/sync-YYYY-MM-DD.log`
+/// and prune daily log files older than 30 days once per day.
+pub fn append_sync_log(channel: &str, direction: &str, message: &str) {
+    let Some(app) = SYNC_APP_HANDLE.get() else {
+        return;
+    };
+    let Ok(log_dir) = resolve_sync_log_dir(app) else {
+        return;
+    };
+    let now = chrono::Local::now();
+    let date_key = now.format("%Y-%m-%d").to_string();
+    let ts = now.format("%Y-%m-%d %H:%M:%S").to_string();
+    let lock = SYNC_LOG_LOCK.get_or_init(|| Mutex::new(None));
+    let Ok(mut last_pruned) = lock.lock() else {
+        return;
+    };
+    if last_pruned.as_deref() != Some(date_key.as_str()) {
+        prune_old_sync_logs(&log_dir, now.date_naive());
+        *last_pruned = Some(date_key.clone());
+    }
+    let log_file = log_dir.join(format!("sync-{date_key}.log"));
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file)
+    {
+        let clean = message.replace('\r', " ").replace('\n', " ");
+        let _ = writeln!(f, "[{ts}] [{channel}/{direction}] {clean}");
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncProgressPayload {
@@ -36,6 +121,8 @@ fn emit_sync_progress(
     total: usize,
     message: impl Into<String>,
 ) {
+    let msg = message.into();
+    append_sync_log(channel, direction, &msg);
     if let Some(app) = SYNC_APP_HANDLE.get() {
         use tauri::Emitter;
         let percent = if total == 0 {
@@ -51,7 +138,7 @@ fn emit_sync_progress(
                 current,
                 total,
                 percent,
-                message: message.into(),
+                message: msg,
             },
         );
     }
@@ -343,8 +430,38 @@ fn write_local_base_manifest(workspace: &Path, manifest: &SyncFolderManifest) {
     }
 }
 
+fn write_local_base_manifest_after_pull(
+    workspace: &Path,
+    remote_manifest: &SyncFolderManifest,
+    local_base: Option<&SyncFolderManifest>,
+    downloaded_or_matched: &HashSet<String>,
+) {
+    let mut updated = remote_manifest.clone();
+    let mut files = BTreeMap::new();
+    for (local_rel, remote_entry) in &remote_manifest.files {
+        if downloaded_or_matched.contains(local_rel) {
+            files.insert(local_rel.clone(), remote_entry.clone());
+        } else if let Some(prev) = local_base.and_then(|b| b.files.get(local_rel)) {
+            files.insert(local_rel.clone(), prev.clone());
+        }
+    }
+    if let Some(base) = local_base {
+        for (local_rel, prev_entry) in &base.files {
+            if !files.contains_key(local_rel) && !remote_manifest.files.contains_key(local_rel) {
+                files.insert(local_rel.clone(), prev_entry.clone());
+            }
+        }
+    }
+    updated.files = files;
+    write_local_base_manifest(workspace, &updated);
+}
+
 fn is_conflict_copy_rel(rel_path: &str) -> bool {
-    rel_path.contains(" (冲突副本 ")
+    Path::new(rel_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|name| name.contains(" (冲突副本 "))
+        .unwrap_or(false)
 }
 
 /// Write a side-by-side conflict copy (`<stem> (冲突副本 <origin> <timestamp>_<sha6>).<ext>`)
@@ -388,6 +505,17 @@ pub fn write_conflict_copy_file(
         let _ = std::fs::create_dir_all(tp);
     }
     if std::fs::write(&target, conflicting_bytes).is_ok() {
+        // #636 / #637 — Record exact conflict copy filename and snapshot directory
+        // in both the live sync log stream and the persistent daily log file.
+        emit_sync_progress(
+            "sync",
+            "conflict",
+            0,
+            0,
+            format!(
+                "冲突已处理: 原文件={local_rel} | 冲突副本={conflict_rel} | 快照目录={SYNC_VERSIONS_REL}"
+            ),
+        );
         Some(conflict_rel)
     } else {
         None
@@ -769,6 +897,7 @@ pub async fn sync_restore_file_version(
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("创建目录失败: {e}"))?;
         }
+        super::watcher::mark_self_write(&target.to_string_lossy());
         std::fs::write(&target, &snap_bytes)
             .map_err(|e| format!("写入恢复文件失败: {e}"))?;
         Ok(String::from_utf8_lossy(&snap_bytes).into_owned())
@@ -829,6 +958,389 @@ pub async fn sync_prune_file_versions(
             }
         }
         Ok(pruned)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+/// #636 — Return `<app_data_dir>/logs` (creating it if needed) so the Help menu
+/// can open it in the OS file manager.
+#[tauri::command]
+pub fn sync_get_log_dir(app: tauri::AppHandle) -> Result<String, String> {
+    set_sync_app_handle(&app);
+    let dir = resolve_sync_log_dir(&app)?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// #636 — Zip all `.log` files in `<app_data_dir>/logs` to the user's Desktop
+/// (falling back to `<app_data_dir>` if Desktop is unavailable) and return the zip path.
+#[tauri::command]
+pub async fn sync_export_logs_to_desktop(app: tauri::AppHandle) -> Result<String, String> {
+    set_sync_app_handle(&app);
+    use tauri::Manager;
+    let log_dir = resolve_sync_log_dir(&app)?;
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let desktop_dir = app
+        .path()
+        .desktop_dir()
+        .ok()
+        .filter(|d| d.is_dir())
+        .or_else(|| SYNC_DATA_DIR_OVERRIDE.get().cloned())
+        .or_else(|| app.path().app_data_dir().ok())
+        .ok_or_else(|| "failed to resolve desktop or app data dir".to_string())?;
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    let desktop_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("failed to resolve app data dir: {e}"))?;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let date_tag = chrono::Local::now().format("%Y-%m-%d_%H%M%S").to_string();
+        let zip_path = desktop_dir.join(format!("SoloMD-logs-{date_tag}.zip"));
+        let file = std::fs::File::create(&zip_path)
+            .map_err(|e| format!("failed to create log archive: {e}"))?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        let mut added = 0usize;
+        if let Ok(entries) = std::fs::read_dir(&log_dir) {
+            let mut log_files: Vec<PathBuf> = entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.is_file()
+                        && p.extension()
+                            .and_then(|e| e.to_str())
+                            .map(|e| e.eq_ignore_ascii_case("log"))
+                            .unwrap_or(false)
+                })
+                .collect();
+            log_files.sort();
+            for p in log_files {
+                if let (Some(name), Ok(bytes)) =
+                    (p.file_name().and_then(|n| n.to_str()), std::fs::read(&p))
+                {
+                    if zip.start_file(name, options).is_ok() && zip.write_all(&bytes).is_ok() {
+                        added += 1;
+                    }
+                }
+            }
+        }
+        if added == 0 {
+            let _ = zip.start_file("README.txt", options);
+            let _ = zip.write_all(b"No sync log files recorded yet.\n");
+        }
+        zip.finish()
+            .map_err(|e| format!("failed to finalize log archive: {e}"))?;
+        Ok(zip_path.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncConflictEntry {
+    pub base_rel: String,
+    pub conflict_rel: String,
+    pub base_exists: bool,
+    pub conflict_mtime: u64,
+    pub conflict_size: u64,
+    pub snapshot_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncConflictDiff {
+    pub base_rel: String,
+    pub conflict_rel: String,
+    pub base_text: String,
+    pub conflict_text: String,
+    pub added_lines: usize,
+    pub removed_lines: usize,
+    pub hunks: Vec<SnapshotDiffHunk>,
+}
+
+fn derive_base_rel_from_conflict(conflict_rel: &str) -> Option<String> {
+    let p = Path::new(conflict_rel);
+    let fname = p.file_name()?.to_str()?;
+    let marker_idx = fname.rfind(" (冲突副本 ")?;
+    let after = &fname[marker_idx..];
+    let close_idx = after.find(')')?;
+    let base_name = format!("{}{}", &fname[..marker_idx], &after[close_idx + 1..]);
+    if base_name.is_empty() {
+        return None;
+    }
+    match p.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => {
+            let parent_str = parent
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/");
+            Some(format!("{parent_str}/{base_name}"))
+        }
+        _ => Some(base_name),
+    }
+}
+
+/// #637 — Strictly validate that a relative path stays inside `ws` (no absolute
+/// paths, no `..` traversal, and canonicalized path/parent stays under `ws`).
+fn resolve_safe_workspace_rel(ws: &Path, rel: &str) -> Result<PathBuf, String> {
+    use std::path::Component;
+    let trimmed = rel.trim();
+    if trimmed.is_empty() {
+        return Err("路径不能为空".to_string());
+    }
+    let rel_path = Path::new(trimmed);
+    if rel_path.is_absolute() {
+        return Err("不允许使用绝对路径".to_string());
+    }
+    let mut clean = PathBuf::new();
+    for comp in rel_path.components() {
+        match comp {
+            Component::Normal(seg) => clean.push(seg),
+            Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err("不允许访问工作区之外的路径".to_string());
+            }
+        }
+    }
+    if clean.as_os_str().is_empty() {
+        return Err("无效的相对路径".to_string());
+    }
+    let ws_canon = std::fs::canonicalize(ws).map_err(|e| format!("无效的工作区目录: {e}"))?;
+    let joined = ws_canon.join(&clean);
+    if joined.exists() {
+        let canon = std::fs::canonicalize(&joined).map_err(|e| format!("无法解析目标路径: {e}"))?;
+        if !canon.starts_with(&ws_canon) {
+            return Err("路径超出工作区范围".to_string());
+        }
+        return Ok(canon);
+    }
+    // For not-yet-existing base files, verify the nearest existing ancestor is inside `ws_canon`.
+    let mut anc = joined.parent();
+    while let Some(a) = anc {
+        if a.exists() {
+            let a_canon = std::fs::canonicalize(a).map_err(|e| format!("无法解析父目录: {e}"))?;
+            if !a_canon.starts_with(&ws_canon) {
+                return Err("路径超出工作区范围".to_string());
+            }
+            break;
+        }
+        anc = a.parent();
+    }
+    Ok(joined)
+}
+
+/// #637 — Ensure `<workspace>/.solomd-sync/versions` exists and return its native path.
+#[tauri::command]
+pub fn sync_ensure_snapshot_dir(workspace: String) -> Result<String, String> {
+    let ws = Path::new(workspace.trim());
+    if !ws.is_dir() {
+        return Err("工作区目录不存在".to_string());
+    }
+    let dir = ws.join(SYNC_VERSIONS_REL);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建快照目录: {e}"))?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+/// #637 — Scan the workspace for sync conflict copies (`* (冲突副本 *).*`) paired
+/// with their working copy file and snapshot directory.
+#[tauri::command]
+pub async fn sync_list_conflicts(workspace: String) -> Result<Vec<SyncConflictEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ws = Path::new(workspace.trim());
+        if !ws.is_dir() {
+            return Ok(vec![]);
+        }
+        let snapshot_dir = ws.join(SYNC_VERSIONS_REL).to_string_lossy().to_string();
+        let mut out = Vec::new();
+        for entry in walkdir::WalkDir::new(ws)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|e| {
+                let name = e.file_name().to_string_lossy();
+                name != ".git" && name != SYNC_META_DIR && name != "node_modules"
+            })
+            .flatten()
+        {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let Ok(rel_p) = entry.path().strip_prefix(ws) else {
+                continue;
+            };
+            let rel = rel_p
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/");
+            if !is_conflict_copy_rel(&rel) {
+                continue;
+            }
+            let Some(base_rel) = derive_base_rel_from_conflict(&rel) else {
+                continue;
+            };
+            let meta = entry.metadata().ok();
+            let conflict_size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let conflict_mtime = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let base_exists = ws.join(&base_rel).is_file();
+            out.push(SyncConflictEntry {
+                base_rel,
+                conflict_rel: rel,
+                base_exists,
+                conflict_mtime,
+                conflict_size,
+                snapshot_dir: snapshot_dir.clone(),
+            });
+        }
+        out.sort_by(|a, b| b.conflict_mtime.cmp(&a.conflict_mtime));
+        Ok(out)
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+/// #637 — Return both texts and a line-level diff between the working copy and conflict copy.
+#[tauri::command]
+pub async fn sync_diff_conflict(
+    workspace: String,
+    base_rel: String,
+    conflict_rel: String,
+) -> Result<SyncConflictDiff, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ws = Path::new(workspace.trim());
+        let base_path = resolve_safe_workspace_rel(ws, &base_rel)?;
+        let conflict_path = resolve_safe_workspace_rel(ws, &conflict_rel)?;
+        if !is_conflict_copy_rel(&conflict_rel) {
+            return Err("目标文件不是同步冲突副本".to_string());
+        }
+        let base_text = if base_path.is_file() {
+            std::fs::read_to_string(&base_path).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let conflict_text = std::fs::read_to_string(&conflict_path)
+            .map_err(|e| format!("无法读取冲突副本: {e}"))?;
+        let diff = compute_snapshot_diff(&base_text, &conflict_text, &conflict_rel);
+        let mut added_lines = 0usize;
+        let mut removed_lines = 0usize;
+        for h in &diff.hunks {
+            for ln in &h.lines {
+                if ln.kind == "add" {
+                    added_lines += 1;
+                } else if ln.kind == "remove" || ln.kind == "del" {
+                    removed_lines += 1;
+                }
+            }
+        }
+        Ok(SyncConflictDiff {
+            base_rel,
+            conflict_rel,
+            base_text,
+            conflict_text,
+            added_lines,
+            removed_lines,
+            hunks: diff.hunks,
+        })
+    })
+    .await
+    .map_err(|e| format!("join: {e}"))?
+}
+
+/// #637 — Resolve a sync conflict copy via `keep_base`, `use_conflict`, or `manual_merge`.
+#[tauri::command]
+pub async fn sync_resolve_conflict(
+    workspace: String,
+    base_rel: String,
+    conflict_rel: String,
+    strategy: String,
+    merged_content: Option<String>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ws = Path::new(workspace.trim());
+        if !is_conflict_copy_rel(&conflict_rel) {
+            return Err("目标文件不是同步冲突副本，拒绝修改或删除".to_string());
+        }
+        let base_path = resolve_safe_workspace_rel(ws, &base_rel)?;
+        let conflict_path = resolve_safe_workspace_rel(ws, &conflict_rel)?;
+        if !conflict_path.is_file() {
+            return Err("冲突副本文件不存在".to_string());
+        }
+        match strategy.as_str() {
+            "keep_base" => {
+                std::fs::remove_file(&conflict_path)
+                    .map_err(|e| format!("删除冲突副本失败: {e}"))?;
+                append_sync_log(
+                    "sync",
+                    "resolve",
+                    &format!("保留工作副本并删除冲突副本: {conflict_rel}"),
+                );
+            }
+            "use_conflict" => {
+                if base_path.is_file() {
+                    if let Ok(old_bytes) = std::fs::read(&base_path) {
+                        let _ = save_local_version_snapshot(
+                            ws,
+                            base_rel.trim(),
+                            &old_bytes,
+                            "before-conflict-replace",
+                            DEFAULT_MAX_VERSIONS,
+                        );
+                    }
+                }
+                let conflict_bytes = std::fs::read(&conflict_path)
+                    .map_err(|e| format!("读取冲突副本失败: {e}"))?;
+                if let Some(parent) = base_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                super::watcher::mark_self_write(&base_path.to_string_lossy());
+                std::fs::write(&base_path, &conflict_bytes)
+                    .map_err(|e| format!("写入工作副本失败: {e}"))?;
+                std::fs::remove_file(&conflict_path)
+                    .map_err(|e| format!("删除冲突副本失败: {e}"))?;
+                append_sync_log(
+                    "sync",
+                    "resolve",
+                    &format!("采用冲突副本覆盖工作副本: {base_rel} <- {conflict_rel}"),
+                );
+            }
+            "manual_merge" => {
+                let merged = merged_content
+                    .ok_or_else(|| "缺少手工合并后的内容".to_string())?;
+                if base_path.is_file() {
+                    if let Ok(old_bytes) = std::fs::read(&base_path) {
+                        let _ = save_local_version_snapshot(
+                            ws,
+                            base_rel.trim(),
+                            &old_bytes,
+                            "before-conflict-merge",
+                            DEFAULT_MAX_VERSIONS,
+                        );
+                    }
+                }
+                if let Some(parent) = base_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                super::watcher::mark_self_write(&base_path.to_string_lossy());
+                std::fs::write(&base_path, merged.as_bytes())
+                    .map_err(|e| format!("写入合并结果失败: {e}"))?;
+                std::fs::remove_file(&conflict_path)
+                    .map_err(|e| format!("删除冲突副本失败: {e}"))?;
+                append_sync_log(
+                    "sync",
+                    "resolve",
+                    &format!("手工合并冲突并删除冲突副本: {base_rel} (已移除 {conflict_rel})"),
+                );
+            }
+            other => return Err(format!("未知的冲突处理策略: {other}")),
+        }
+        Ok(())
     })
     .await
     .map_err(|e| format!("join: {e}"))?
@@ -1198,7 +1710,25 @@ async fn ensure_remote_dir(
     Ok(())
 }
 
+/// #675 — Sync `.solomd/order.json` and `.solomd/sort.json` across devices so
+/// file-tree manual order and sort mode remain identical after cloud sync.
+fn is_sync_tree_meta(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    if name != "order.json" && name != "sort.json" && name != "sync-journal.log" {
+        return false;
+    }
+    path.parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        == Some(".solomd")
+}
+
 fn should_skip_dir(name: &str) -> bool {
+    if name == ".solomd" {
+        return false;
+    }
     name.starts_with('.')
         || name == "node_modules"
         || name == "target"
@@ -1206,6 +1736,13 @@ fn should_skip_dir(name: &str) -> bool {
 }
 
 fn should_sync_file(path: &Path) -> bool {
+    if is_sync_tree_meta(path) {
+        return true;
+    }
+    // Never sync arbitrary files inside `.solomd/` other than the allowlisted tree meta files above.
+    if path.components().any(|c| c.as_os_str() == ".solomd") {
+        return false;
+    }
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
@@ -1743,6 +2280,7 @@ pub async fn webdav_pull_workspace(
     // 坚果云 Nutstore and Nextcloud, which reject `Depth: infinity`).
     let mut queue: Vec<String> = vec![String::new()];
     let mut visited_dirs: HashSet<String> = HashSet::new();
+    let mut downloaded_or_matched: HashSet<String> = HashSet::new();
     let mut downloaded = 0usize;
     let mut skipped = 0usize;
     let mut conflicts = 0usize;
@@ -1815,6 +2353,7 @@ pub async fn webdav_pull_workspace(
                     if local_target.exists() {
                         if let Ok(existing_bytes) = std::fs::read(&local_target) {
                             if sha256_hex(&existing_bytes) == me.sha256 {
+                                downloaded_or_matched.insert(local_rel.clone());
                                 skipped += 1;
                                 let total_est = remote_to_entry.len().max(downloaded + skipped + 1);
                                 emit_sync_progress(
@@ -1902,6 +2441,7 @@ pub async fn webdav_pull_workspace(
                                 );
                             }
                         } else {
+                            downloaded_or_matched.insert(local_rel.clone());
                             skipped += 1;
                             continue;
                         }
@@ -1912,6 +2452,7 @@ pub async fn webdav_pull_workspace(
                 }
                 std::fs::write(&local_target, &plain_bytes)
                     .map_err(|e| format!("Write error for {local_rel}: {e}"))?;
+                downloaded_or_matched.insert(local_rel.clone());
                 downloaded += 1;
                 let total_est = remote_to_entry.len().max(downloaded + skipped);
                 emit_sync_progress(
@@ -1926,7 +2467,7 @@ pub async fn webdav_pull_workspace(
     }
 
     if let Some(ref fm) = folder_manifest {
-        write_local_base_manifest(&ws_path, fm);
+        write_local_base_manifest_after_pull(&ws_path, fm, local_base.as_ref(), &downloaded_or_matched);
     }
 
     let conflict_note = if conflicts > 0 {
@@ -2052,6 +2593,14 @@ pub fn cloud_vault_push_options_inner(
     }
     if workspace == vault_dir || vault_dir.starts_with(workspace) {
         return Err("网盘同步目录不能与当前笔记目录相同或位于其内部 (Vault folder must be outside workspace)".into());
+    }
+    if let (Ok(ws_canon), Ok(vault_canon)) = (
+        std::fs::canonicalize(workspace),
+        std::fs::canonicalize(vault_dir),
+    ) {
+        if ws_canon == vault_canon || vault_canon.starts_with(&ws_canon) {
+            return Err("网盘同步目录不能与当前笔记目录相同或位于其内部 (Vault folder must be outside workspace)".into());
+        }
     }
 
     let target_root = if auto_workspace_subdir {
@@ -4158,7 +4707,9 @@ async fn baidu_push_folder(
     }
 
     // Preserve any files in remote manifest that were created by another device,
-    // and delete remote copies of files that were renamed or deleted locally (#618).
+    // and delete remote copies of files (plus now-empty parent folders) that were
+    // renamed or deleted locally (#618, #619).
+    let mut candidate_stale_dirs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for (rem_rel_key, rem_entry) in &manifest.files {
         if !new_files_map.contains_key(rem_rel_key) {
             let was_deleted_locally = local_base
@@ -4168,9 +4719,47 @@ async fn baidu_push_folder(
             if was_deleted_locally {
                 let stale_full = format!("{ws_remote_root}/{}", rem_entry.remote_rel);
                 baidu_delete_remote_file(client, token, &stale_full).await;
+                let mut cur = rem_entry.remote_rel.as_str();
+                while let Some(slash) = cur.rfind('/') {
+                    let parent = &cur[..slash];
+                    if parent.is_empty() {
+                        break;
+                    }
+                    candidate_stale_dirs.insert(parent.to_string());
+                    cur = parent;
+                }
             } else {
                 new_files_map.insert(rem_rel_key.clone(), rem_entry.clone());
             }
+        }
+    }
+    if !candidate_stale_dirs.is_empty() {
+        let mut active_dirs: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for entry in new_files_map.values() {
+            let mut cur = entry.remote_rel.as_str();
+            while let Some(slash) = cur.rfind('/') {
+                let parent = &cur[..slash];
+                if parent.is_empty() {
+                    break;
+                }
+                active_dirs.insert(parent.to_string());
+                cur = parent;
+            }
+        }
+        let mut stale_dirs: Vec<String> = candidate_stale_dirs
+            .into_iter()
+            .filter(|d| !active_dirs.contains(d))
+            .collect();
+        // Delete deepest subdirectories first, then empty parent directories.
+        stale_dirs.sort_by(|a, b| {
+            b.matches('/')
+                .count()
+                .cmp(&a.matches('/').count())
+                .then_with(|| b.len().cmp(&a.len()))
+        });
+        for stale_dir in stale_dirs {
+            let stale_full = format!("{ws_remote_root}/{stale_dir}");
+            baidu_delete_remote_file(client, token, &stale_full).await;
         }
     }
 
@@ -4251,6 +4840,7 @@ async fn baidu_pull_folder(
     // BFS traversal of ws_remote_root on Baidu Netdisk
     let mut queue = vec![ws_remote_root.clone()];
     let mut visited = HashSet::new();
+    let mut downloaded_or_matched: HashSet<String> = HashSet::new();
     let mut downloaded = 0usize;
     let mut skipped = 0usize;
     let mut conflicts = 0usize;
@@ -4345,6 +4935,7 @@ async fn baidu_pull_folder(
                 if local_target.exists() {
                     if let Ok(existing_bytes) = std::fs::read(&local_target) {
                         if sha256_hex(&existing_bytes) == me.sha256 {
+                            downloaded_or_matched.insert(local_rel.clone());
                             skipped += 1;
                             continue;
                         }
@@ -4409,6 +5000,7 @@ async fn baidu_pull_folder(
                             );
                         }
                     } else {
+                        downloaded_or_matched.insert(local_rel.clone());
                         skipped += 1;
                         continue;
                     }
@@ -4421,6 +5013,7 @@ async fn baidu_pull_folder(
             }
             std::fs::write(&local_target, &plain_bytes)
                 .map_err(|e| format!("写入本地文件 {local_rel} 失败: {e}"))?;
+            downloaded_or_matched.insert(local_rel.clone());
             downloaded += 1;
             let total_est = remote_to_entry.len().max(downloaded + skipped);
             emit_sync_progress(
@@ -4434,7 +5027,7 @@ async fn baidu_pull_folder(
     }
 
     if let Some(ref m) = manifest_opt {
-        write_local_base_manifest(workspace, m);
+        write_local_base_manifest_after_pull(workspace, m, local_base.as_ref(), &downloaded_or_matched);
     }
 
     let conflict_note = if conflicts > 0 {
@@ -4652,6 +5245,7 @@ async fn onedrive_pull_folder(
     };
 
     let local_base = read_local_base_manifest(workspace);
+    let mut downloaded_or_matched: HashSet<String> = HashSet::new();
     let mut downloaded = 0usize;
     let mut skipped = 0usize;
     let mut conflicts = 0usize;
@@ -4667,6 +5261,7 @@ async fn onedrive_pull_folder(
             if let Ok(existing) = std::fs::read(&target_local) {
                 let local_sha = sha256_hex(&existing);
                 if local_sha == entry.sha256 {
+                    downloaded_or_matched.insert(local_rel.clone());
                     skipped += 1;
                     continue;
                 }
@@ -4724,6 +5319,7 @@ async fn onedrive_pull_folder(
             "从 OneDrive 同步版本",
             max_versions,
         );
+        downloaded_or_matched.insert(local_rel.clone());
         downloaded += 1;
         emit_sync_progress(
             "cloud_api",
@@ -4734,7 +5330,7 @@ async fn onedrive_pull_folder(
         );
     }
 
-    write_local_base_manifest(workspace, &manifest);
+    write_local_base_manifest_after_pull(workspace, &manifest, local_base.as_ref(), &downloaded_or_matched);
     let conflict_note = if conflicts > 0 {
         format!("，检测到 {conflicts} 处多端并发修改并已生成冲突副本")
     } else {
@@ -4963,6 +5559,7 @@ async fn dropbox_pull_folder(
     };
 
     let local_base = read_local_base_manifest(workspace);
+    let mut downloaded_or_matched: HashSet<String> = HashSet::new();
     let mut downloaded = 0usize;
     let mut skipped = 0usize;
     let mut conflicts = 0usize;
@@ -4978,6 +5575,7 @@ async fn dropbox_pull_folder(
             if let Ok(existing) = std::fs::read(&target_local) {
                 let local_sha = sha256_hex(&existing);
                 if local_sha == entry.sha256 {
+                    downloaded_or_matched.insert(local_rel.clone());
                     skipped += 1;
                     continue;
                 }
@@ -5033,6 +5631,7 @@ async fn dropbox_pull_folder(
             "从 Dropbox 同步版本",
             max_versions,
         );
+        downloaded_or_matched.insert(local_rel.clone());
         downloaded += 1;
         emit_sync_progress(
             "cloud_api",
@@ -5043,7 +5642,7 @@ async fn dropbox_pull_folder(
         );
     }
 
-    write_local_base_manifest(workspace, &manifest);
+    write_local_base_manifest_after_pull(workspace, &manifest, local_base.as_ref(), &downloaded_or_matched);
     let conflict_note = if conflicts > 0 {
         format!("，检测到 {conflicts} 处多端并发修改并已生成冲突副本")
     } else {
@@ -5374,6 +5973,7 @@ async fn alipan_pull_folder(
     };
 
     let local_base = read_local_base_manifest(workspace);
+    let mut downloaded_or_matched: HashSet<String> = HashSet::new();
     let mut downloaded = 0usize;
     let mut skipped = 0usize;
     let mut conflicts = 0usize;
@@ -5390,6 +5990,7 @@ async fn alipan_pull_folder(
             if let Ok(existing) = std::fs::read(&target_local) {
                 let local_sha = sha256_hex(&existing);
                 if local_sha == entry.sha256 {
+                    downloaded_or_matched.insert(local_rel.clone());
                     skipped += 1;
                     continue;
                 }
@@ -5450,6 +6051,7 @@ async fn alipan_pull_folder(
             "从阿里云盘同步版本",
             max_versions,
         );
+        downloaded_or_matched.insert(local_rel.clone());
         downloaded += 1;
         emit_sync_progress(
             "cloud_api",
@@ -5460,7 +6062,7 @@ async fn alipan_pull_folder(
         );
     }
 
-    write_local_base_manifest(workspace, &manifest);
+    write_local_base_manifest_after_pull(workspace, &manifest, local_base.as_ref(), &downloaded_or_matched);
     let conflict_note = if conflicts > 0 {
         format!("，检测到 {conflicts} 处多端并发修改并已生成冲突副本")
     } else {
@@ -5853,6 +6455,7 @@ async fn gdrive_pull_folder(
     };
 
     let local_base = read_local_base_manifest(workspace);
+    let mut downloaded_or_matched: HashSet<String> = HashSet::new();
     let mut downloaded = 0usize;
     let mut skipped = 0usize;
     let mut conflicts = 0usize;
@@ -5869,6 +6472,7 @@ async fn gdrive_pull_folder(
             if let Ok(existing) = std::fs::read(&target_local) {
                 let local_sha = sha256_hex(&existing);
                 if local_sha == entry.sha256 {
+                    downloaded_or_matched.insert(local_rel.clone());
                     skipped += 1;
                     continue;
                 }
@@ -5929,6 +6533,7 @@ async fn gdrive_pull_folder(
             "从 Google Drive 同步版本",
             max_versions,
         );
+        downloaded_or_matched.insert(local_rel.clone());
         downloaded += 1;
         emit_sync_progress(
             "cloud_api",
@@ -5939,7 +6544,7 @@ async fn gdrive_pull_folder(
         );
     }
 
-    write_local_base_manifest(workspace, &manifest);
+    write_local_base_manifest_after_pull(workspace, &manifest, local_base.as_ref(), &downloaded_or_matched);
     let conflict_note = if conflicts > 0 {
         format!("，检测到 {conflicts} 处多端并发修改并已生成冲突副本")
     } else {
@@ -6365,6 +6970,7 @@ async fn r2_pull_folder(
     };
 
     let local_base = read_local_base_manifest(workspace);
+    let mut downloaded_or_matched: HashSet<String> = HashSet::new();
     let mut downloaded = 0usize;
     let mut skipped = 0usize;
     let mut conflicts = 0usize;
@@ -6380,6 +6986,7 @@ async fn r2_pull_folder(
             if let Ok(existing) = std::fs::read(&target_local) {
                 let local_sha = sha256_hex(&existing);
                 if local_sha == entry.sha256 {
+                    downloaded_or_matched.insert(local_rel.clone());
                     skipped += 1;
                     continue;
                 }
@@ -6426,6 +7033,7 @@ async fn r2_pull_folder(
             "从 Cloudflare R2 同步版本",
             max_versions,
         );
+        downloaded_or_matched.insert(local_rel.clone());
         downloaded += 1;
         emit_sync_progress(
             "cloud_api",
@@ -6436,7 +7044,7 @@ async fn r2_pull_folder(
         );
     }
 
-    write_local_base_manifest(workspace, &manifest);
+    write_local_base_manifest_after_pull(workspace, &manifest, local_base.as_ref(), &downloaded_or_matched);
     let conflict_note = if conflicts > 0 {
         format!("，检测到 {conflicts} 处多端并发修改并已生成冲突副本")
     } else {
@@ -6805,6 +7413,267 @@ pub async fn cloud_api_pull_workspace(
     })
 }
 
+// ---------------------------------------------------------------------------
+// #674 — Multi-device sync journal & overwrite / deletion guard
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyncJournalOp {
+    pub kind: String, // "ADD" | "MOD" | "RMV"
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyncJournalEntry {
+    pub timestamp: u64,
+    pub device_id: String,
+    pub ops: Vec<SyncJournalOp>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyncJournalConflict {
+    pub has_conflict: bool,
+    pub other_devices: Vec<String>,
+    pub conflicting_files: Vec<String>,
+    pub latest_remote_ts: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SyncRemovalBatch {
+    pub timestamp: u64,
+    pub device_id: String,
+    pub paths: Vec<String>,
+}
+
+pub fn parse_sync_journal(content: &str) -> Vec<SyncJournalEntry> {
+    let mut entries: Vec<SyncJournalEntry> = Vec::new();
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('[') {
+            if let Some(close_idx) = line.find(']') {
+                let kind = line[1..close_idx].trim().to_string();
+                let path = line[close_idx + 1..].trim().to_string();
+                if matches!(kind.as_str(), "ADD" | "MOD" | "RMV") && !path.is_empty() {
+                    if let Some(last) = entries.last_mut() {
+                        last.ops.push(SyncJournalOp { kind, path });
+                    }
+                }
+            }
+            continue;
+        }
+        if let Some((ts_str, dev_str)) = line.split_once(':') {
+            if let Ok(timestamp) = ts_str.trim().parse::<u64>() {
+                let device_id = dev_str.trim().to_string();
+                if !device_id.is_empty() {
+                    entries.push(SyncJournalEntry {
+                        timestamp,
+                        device_id,
+                        ops: Vec::new(),
+                    });
+                }
+            }
+        }
+    }
+    entries
+}
+
+pub fn format_sync_journal_entry(
+    timestamp: u64,
+    device_id: &str,
+    ops: &[SyncJournalOp],
+) -> String {
+    let mut out = format!("{timestamp}: {device_id}\n");
+    for op in ops {
+        out.push_str(&format!("[{}]{}\n", op.kind, op.path));
+    }
+    out
+}
+
+pub fn check_journal_conflict_inner(
+    local_journal: &str,
+    remote_journal: &str,
+    my_device_id: &str,
+    pending_paths: &[String],
+) -> SyncJournalConflict {
+    let local_entries = parse_sync_journal(local_journal);
+    let remote_entries = parse_sync_journal(remote_journal);
+    let local_last_ts = local_entries.last().map(|e| e.timestamp).unwrap_or(0);
+    let latest_remote_ts = remote_entries.last().map(|e| e.timestamp).unwrap_or(0);
+
+    let pending_set: std::collections::HashSet<&str> =
+        pending_paths.iter().map(|s| s.as_str()).collect();
+    let mut other_devices: Vec<String> = Vec::new();
+    let mut conflicting_files: Vec<String> = Vec::new();
+
+    for entry in remote_entries.iter().filter(|e| e.timestamp > local_last_ts) {
+        if entry.device_id != my_device_id {
+            if !other_devices.contains(&entry.device_id) {
+                other_devices.push(entry.device_id.clone());
+            }
+            for op in &entry.ops {
+                if (pending_set.is_empty() || pending_set.contains(op.path.as_str()))
+                    && !conflicting_files.contains(&op.path)
+                {
+                    conflicting_files.push(op.path.clone());
+                }
+            }
+        }
+    }
+
+    let has_conflict = !other_devices.is_empty()
+        && (pending_set.is_empty() || !conflicting_files.is_empty());
+
+    SyncJournalConflict {
+        has_conflict,
+        other_devices,
+        conflicting_files,
+        latest_remote_ts,
+    }
+}
+
+pub fn extract_remote_removals_inner(
+    local_journal: &str,
+    remote_journal: &str,
+    my_device_id: &str,
+) -> Vec<SyncRemovalBatch> {
+    let local_entries = parse_sync_journal(local_journal);
+    let remote_entries = parse_sync_journal(remote_journal);
+    let local_last_ts = local_entries.last().map(|e| e.timestamp).unwrap_or(0);
+
+    remote_entries
+        .into_iter()
+        .filter(|e| e.timestamp > local_last_ts && e.device_id != my_device_id)
+        .filter_map(|e| {
+            let paths: Vec<String> = e
+                .ops
+                .into_iter()
+                .filter(|op| op.kind == "RMV")
+                .map(|op| op.path)
+                .collect();
+            if paths.is_empty() {
+                None
+            } else {
+                Some(SyncRemovalBatch {
+                    timestamp: e.timestamp,
+                    device_id: e.device_id,
+                    paths,
+                })
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub async fn sync_check_journal_conflict(
+    local_journal: String,
+    remote_journal: String,
+    my_device_id: String,
+    pending_paths: Vec<String>,
+) -> Result<SyncJournalConflict, String> {
+    Ok(check_journal_conflict_inner(
+        &local_journal,
+        &remote_journal,
+        &my_device_id,
+        &pending_paths,
+    ))
+}
+
+#[tauri::command]
+pub async fn sync_append_journal(
+    workspace: String,
+    device_id: String,
+    ops: Vec<SyncJournalOp>,
+) -> Result<String, String> {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let meta_dir = PathBuf::from(&workspace).join(".solomd");
+    std::fs::create_dir_all(&meta_dir).map_err(|e| e.to_string())?;
+    let journal_path = meta_dir.join("sync-journal.log");
+    let mut existing = std::fs::read_to_string(&journal_path).unwrap_or_default();
+    if !existing.is_empty() && !existing.ends_with('\n') {
+        existing.push('\n');
+    }
+    existing.push_str(&format_sync_journal_entry(ts, &device_id, &ops));
+    // Keep last 500 lines so the journal stays tiny and fast.
+    let lines: Vec<&str> = existing.lines().collect();
+    let trimmed = if lines.len() > 500 {
+        format!("{}\n", lines[lines.len() - 500..].join("\n"))
+    } else {
+        existing
+    };
+    std::fs::write(&journal_path, &trimmed).map_err(|e| e.to_string())?;
+    Ok(trimmed)
+}
+
+#[tauri::command]
+pub async fn sync_extract_remote_removals(
+    local_journal: String,
+    remote_journal: String,
+    my_device_id: String,
+) -> Result<Vec<SyncRemovalBatch>, String> {
+    Ok(extract_remote_removals_inner(
+        &local_journal,
+        &remote_journal,
+        &my_device_id,
+    ))
+}
+
+#[cfg(test)]
+mod v540_sync_tests {
+    use super::*;
+
+    #[test]
+    fn tree_order_and_sort_meta_are_syncable_while_other_dot_solomd_files_are_skipped() {
+        assert!(should_sync_file(Path::new("/vault/.solomd/order.json")));
+        assert!(should_sync_file(Path::new("/vault/.solomd/sort.json")));
+        assert!(should_sync_file(Path::new("/vault/.solomd/sync-journal.log")));
+        assert!(!should_sync_file(Path::new("/vault/.solomd/session.abc.json")));
+        assert!(!should_sync_file(Path::new("/vault/.solomd/agent-runs/1.md")));
+        assert!(!should_skip_dir(".solomd"));
+        assert!(should_skip_dir(".git"));
+    }
+
+    #[test]
+    fn sync_journal_detects_other_device_conflict_and_groups_removals() {
+        let local = "1700000100: dev-A\n[MOD]notes/a.md\n";
+        let remote = concat!(
+            "1700000100: dev-A\n[MOD]notes/a.md\n",
+            "1700000200: dev-B\n[MOD]notes/a.md\n[RMV]notes/old.md\n",
+            "1700000300: dev-B\n[ADD]notes/new.md\n[RMV]notes/trash.md\n",
+        );
+
+        let conflict = check_journal_conflict_inner(
+            local,
+            remote,
+            "dev-A",
+            &["notes/a.md".to_string()],
+        );
+        assert!(conflict.has_conflict);
+        assert_eq!(conflict.other_devices, vec!["dev-B".to_string()]);
+        assert_eq!(conflict.conflicting_files, vec!["notes/a.md".to_string()]);
+
+        let no_conflict = check_journal_conflict_inner(
+            local,
+            remote,
+            "dev-A",
+            &["notes/untouched.md".to_string()],
+        );
+        assert!(!no_conflict.has_conflict);
+
+        let removals = extract_remote_removals_inner(local, remote, "dev-A");
+        assert_eq!(removals.len(), 2);
+        assert_eq!(removals[0].timestamp, 1700000200);
+        assert_eq!(removals[0].paths, vec!["notes/old.md".to_string()]);
+        assert_eq!(removals[1].timestamp, 1700000300);
+        assert_eq!(removals[1].paths, vec!["notes/trash.md".to_string()]);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7115,5 +7984,26 @@ mod tests {
         assert!(ws_cloud.join("笔记文档/secret.md.enc").is_file());
         let ct = std::fs::read(ws_cloud.join("笔记文档/secret.md.enc")).unwrap();
         assert_eq!(&ct[..4], b"SLMD");
+    }
+
+    #[test]
+    fn sync_diff_conflict_counts_removed_and_added_lines() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = tmp.path();
+        std::fs::write(ws.join("note.md"), "line1\nremoved_line_a\nremoved_line_b\n").unwrap();
+        std::fs::write(
+            ws.join("note (冲突副本 dev 100_abc123).md"),
+            "line1\nadded_line_x\n",
+        )
+        .unwrap();
+
+        let res = tauri::async_runtime::block_on(sync_diff_conflict(
+            ws.to_string_lossy().to_string(),
+            "note.md".to_string(),
+            "note (冲突副本 dev 100_abc123).md".to_string(),
+        ))
+        .unwrap();
+        assert_eq!(res.added_lines, 1);
+        assert_eq!(res.removed_lines, 2);
     }
 }
