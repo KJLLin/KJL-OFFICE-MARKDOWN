@@ -1,3 +1,12 @@
+<script lang="ts">
+let nextEditorUid = 1;
+let lastFocusedEditorUid = 0;
+const mountedEditorsByUid = new Map<
+  number,
+  { getTabId: () => string; getRootEl: () => HTMLElement | null }
+>();
+</script>
+
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue';
 import { EditorState, Compartment, Prec, Transaction } from '@codemirror/state';
@@ -8,13 +17,15 @@ import { createFindPanel, setFindPanelReplaceExpanded, selectAllOccurrencesComma
 import { tabCaretMemory, tabTopLineMemory, type TabCaretSnapshot } from '../lib/scroll-memory';
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching, indentUnit } from '@codemirror/language';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import { yamlFrontmatter } from '@codemirror/lang-yaml';
 import { cjkFriendlyEmphasis } from '../lib/cm-cjk-emphasis';
 import { bindMermaidInteractions, renderMermaidCached } from '../lib/mermaid-lazy';
 import { parseInsertSnippet } from '../lib/insert-snippet';
 // The grammar imports and the `codeLanguages` list they feed now live in
 // `lib/code-languages.ts`: the ``` fence-language picker (#297) derives its
 // catalogue from that same list, so there is only one copy to keep in sync.
-import { codeLanguages } from '../lib/code-languages';
+import { codeLanguages, loadPlainLanguageExtension } from '../lib/code-languages';
+import { openImageOverlay } from '../lib/image-overlay';
 import { fenceLanguageComplete, fenceLanguageExtension } from '../lib/cm-fence-completion';
 import { filterFenceLanguages, isInsideFenceBefore, matchFenceOpener } from '../lib/fence-languages';
 import { vim, Vim, getCM } from '@replit/codemirror-vim';
@@ -275,6 +286,45 @@ watch(
 
 const host = ref<HTMLDivElement | null>(null);
 let view: EditorView | null = null;
+const editorUid = nextEditorUid++;
+
+function markEditorFocused() {
+  lastFocusedEditorUid = editorUid;
+}
+
+function getEditorRootEl(): HTMLElement | null {
+  return usePlainWindowsEditor ? plainHostEl.value : host.value;
+}
+
+function isPrimaryActiveEditor(): boolean {
+  if (!props.tab || props.tab.id !== tabs.activeId) return false;
+  const sameTabEditors: Array<{ uid: number; root: HTMLElement | null }> = [];
+  for (const [uid, entry] of mountedEditorsByUid.entries()) {
+    if (entry.getTabId() === props.tab.id) {
+      sameTabEditors.push({ uid, root: entry.getRootEl() });
+    }
+  }
+  if (sameTabEditors.length <= 1) {
+    if (typeof document === 'undefined') return true;
+    const allEditors = document.querySelectorAll('.cm-editor, .plain-host');
+    if (allEditors.length <= 1) return true;
+  }
+  const myRoot = getEditorRootEl();
+  const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+  if (myRoot && activeEl && myRoot.contains(activeEl)) {
+    lastFocusedEditorUid = editorUid;
+    return true;
+  }
+  for (const other of sameTabEditors) {
+    if (other.uid !== editorUid && other.root && activeEl && other.root.contains(activeEl)) {
+      return false;
+    }
+  }
+  if (lastFocusedEditorUid > 0 && sameTabEditors.some((e) => e.uid === lastFocusedEditorUid)) {
+    return lastFocusedEditorUid === editorUid;
+  }
+  return sameTabEditors.length === 0 || sameTabEditors[0].uid === editorUid;
+}
 const cursorHistoryByTab = new Map<string, CursorHistoryQueue>();
 function getCursorHistory(tabId = props.tab.id): CursorHistoryQueue {
   let q = cursorHistoryByTab.get(tabId);
@@ -587,7 +637,7 @@ function flushContentSync() {
 
 let skipNextAutoNumber = false;
 
-function syncEditorContentSoon(text: string) {
+function syncEditorContentSoon(text?: string) {
   if (contentSyncTimer) clearTimeout(contentSyncTimer);
   contentSyncTimer = setTimeout(() => {
     contentSyncTimer = null;
@@ -628,14 +678,29 @@ function syncEditorContentSoon(text: string) {
       tabs.setContent(props.tab.id, curDoc);
       return;
     }
-    tabs.setContent(props.tab.id, text);
+    if (typeof text === 'string') {
+      tabs.setContent(props.tab.id, text);
+    }
   }, 350);
 }
 
 watch(
   () => settings.autoNumberHeadings,
   (enabled) => {
-    if (props.tab.id !== tabs.activeId || props.tab.language !== 'markdown') return;
+    if (!isPrimaryActiveEditor() || props.tab.language !== 'markdown') return;
+    if (usePlainWindowsEditor) {
+      if (plainComposing.value) return;
+      const curDoc = plainText.value || '';
+      const sel = plainAbsoluteSelection() ?? { from: 0, to: 0 };
+      const edit = autoNumberHeadings(curDoc, sel.from, sel.to, enabled ? 'add' : 'remove');
+      if (edit) {
+        const updated = curDoc.slice(0, edit.from) + edit.insert + curDoc.slice(edit.to);
+        recordPlainHistory();
+        syncPlainEditorFromStore(updated, true);
+        tabs.setContent(props.tab.id, updated);
+      }
+      return;
+    }
     if (view && !view.composing) {
       const curDoc = view.state.doc.toString();
       const sel = view.state.selection.main;
@@ -1084,6 +1149,7 @@ function renderPlainBlock(src: string, precomputedRoot?: string | null): string 
   const isRichBlock =
     isTocBlock ||
     parseTable(src) !== null ||
+    /^---[ \t]*\r?\n[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*$/.test(src.trim()) ||
     /^\s*(`{3,}|~{3,})/.test(src) ||
     /^\s*(\$\$|\\\[)/.test(src) ||
     /!\[[^\]]*\]\(|!\[[^\]]*\]\[/.test(src) ||
@@ -1254,6 +1320,44 @@ async function processPlainLiveRenderedBlocks(onlyBlockIndex?: number) {
       const wrap = document.createElement('div');
       wrap.className = 'plain-mermaid-block';
       wrap.innerHTML = result.svg;
+      const zoomBtn = document.createElement('button');
+      zoomBtn.type = 'button';
+      zoomBtn.className = 'cm-mermaid-zoom-btn';
+      zoomBtn.title = settings.language === 'zh' ? '放大查看' : 'Zoom diagram';
+      zoomBtn.setAttribute('aria-label', 'Zoom diagram');
+      zoomBtn.textContent = '⤢';
+      const openZoom = () => {
+        const svg = wrap.querySelector('svg');
+        if (!svg) return;
+        const zh = settings.language === 'zh';
+        openImageOverlay({
+          source: svg,
+          strings: {
+            close: zh ? '关闭' : 'Close',
+            zoomIn: zh ? '放大' : 'Zoom in',
+            zoomOut: zh ? '缩小' : 'Zoom out',
+            resetZoom: zh ? '重置缩放' : 'Reset zoom',
+            image: zh ? '图片' : 'Image',
+            diagram: zh ? '图表' : 'Diagram',
+          },
+        });
+      };
+      zoomBtn.addEventListener('mousedown', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      });
+      zoomBtn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openZoom();
+      });
+      wrap.appendChild(zoomBtn);
+      wrap.addEventListener('dblclick', (ev) => {
+        if ((ev.target as Element | null)?.closest?.('a, button')) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        openZoom();
+      });
       pre.replaceWith(wrap);
       bindMermaidInteractions(wrap, result.bindFunctions);
     } else {
@@ -1843,6 +1947,31 @@ function syncPlainEditorFromStore(rawText: string, preserveCaret = false) {
   const text = (rawText || '').replace(/\r\n?/g, '\n');
   const el = plainEditor.value;
   plainText.value = text;
+  if (plainLiveEnabled.value) {
+    plainActiveBlock.value = Math.max(0, Math.min(plainActiveBlock.value, Math.max(0, plainBlocks.value.length - 1)));
+    nextTick(() => {
+      if (plainText.value !== text) return;
+      plainActiveBlock.value = Math.max(0, Math.min(plainActiveBlock.value, Math.max(0, plainBlocks.value.length - 1)));
+      const block = plainBlocks.value[plainActiveBlock.value];
+      const bEl = plainBlockEditors.value[plainActiveBlock.value];
+      if (block && bEl && bEl.value !== block.text) {
+        const from = bEl.selectionStart;
+        const to = bEl.selectionEnd;
+        const hadFocus = document.activeElement === bEl;
+        bEl.value = block.text;
+        if (preserveCaret) {
+          const a = Math.min(from ?? 0, block.text.length);
+          const b = Math.min(to ?? a, block.text.length);
+          bEl.setSelectionRange(a, b);
+          if (hadFocus && document.activeElement !== bEl) bEl.focus({ preventScroll: true });
+        }
+      }
+      if (bEl) autoSizePlainBlock(bEl);
+      emitPlainCursorAndSelection();
+      syncPlainLiveScroll();
+    });
+    return;
+  }
   if (!el) {
     // #281 — the flat textarea may not exist *yet*. Watchers run before Vue
     // patches the DOM, so a tab switch that also flips `plainLiveEnabled`
@@ -4689,11 +4818,13 @@ function markdownExt() {
         { key: 'Enter', run: markdownEnterCommand },
       ]),
     ),
-    markdown({
-      base: markdownLanguage,
-      codeLanguages,
-      addKeymap: true,
-      extensions: [cjkFriendlyEmphasis],
+    yamlFrontmatter({
+      content: markdown({
+        base: markdownLanguage,
+        codeLanguages,
+        addKeymap: true,
+        extensions: [cjkFriendlyEmphasis],
+      }),
     }),
     listRenumberFilter,
   ];
@@ -4844,6 +4975,9 @@ function richExtensionsFor(tab: Tab) {
     // Cursor enters → widget unmounts → source returns. Image paths
     // resolve via the same extractImageRoot used by Preview/Export.
     return [
+      // #652 — Mark the `.cm-editor` root with `cm-live-edit` so paragraph-spacing
+      // rules scoped under `&.cm-live-edit` in `fontSizeTheme` actually apply.
+      EditorView.editorAttributes.of({ class: 'cm-live-edit' }),
       ...liveEditExtension([
         liveBlocksExtension({
           getImageRoot: () => extractImageRoot(tab.content || ''),
@@ -4909,18 +5043,19 @@ const fontSizeTheme = (
 ) => {
   const lh = Number.isFinite(lineHeight) ? Math.max(1.2, Math.min(2.6, lineHeight)) : 1.8;
   const ps = Number.isFinite(paragraphSpacing) ? Math.max(0, Math.min(2.0, paragraphSpacing)) : 0.9;
-  const blankLineLh = Math.max(0.25, Math.round(lh * (ps / 0.9) * 1000) / 1000);
-  const singleEnterPadEm = Math.max(0, Math.round(ps * 0.45 * 1000) / 1000);
+  // #679 — In CodeMirror, soft-wrapped visual lines share a single `.cm-line`,
+  // while every hard Enter (`\n`) starts a new `.cm-line`. Apply the configured
+  // `paragraphSpacing` directly as `paddingBottom` on hard-Enter paragraph lines
+  // (excluding code fences, lists, quotes, headings, and blank lines) rather than
+  // shrinking it to 45% or requiring blank lines between paragraphs.
+  const paraPadEm = Math.max(0, Math.round(ps * 1000) / 1000);
   return EditorView.theme({
     '&': { fontSize: `${px}px`, height: '100%' },
     // 5.0 §5 + #612 — body 16/1.8 by default, user-configurable lineHeight & paragraphSpacing,
     // 20px above the first line (#435, #440), room to scroll the last line up to the eye.
     '.cm-scroller': { fontFamily: buildEditorFontStack(family), lineHeight: String(lh) },
-    '&.cm-live-edit .cm-content > .cm-line:not(.cm-md-fenced-line):has(> br:only-child)': {
-      lineHeight: String(blankLineLh),
-    },
-    '&.cm-live-edit .cm-content > .cm-line:not(.cm-md-fenced-line):not(.cm-md-list-line):not(.cm-md-quote-line):not([class*="cm-md-heading-line-"]):not(:has(> br:only-child)):has(+ .cm-line:not(.cm-md-fenced-line):not(.cm-md-list-line):not(:has(> br:only-child)))': {
-      paddingBottom: `${singleEnterPadEm}em`,
+    '&.cm-live-edit .cm-content > .cm-line:not(.cm-md-fenced-line):not(.cm-md-list-line):not(.cm-md-quote-line):not([class*="cm-md-heading-line-"]):not(:has(> br:only-child))': {
+      paddingBottom: `${paraPadEm}em`,
     },
     '.cm-content': { padding: '20px 32px 30vh', caretColor: 'var(--accent)' },
     '.cm-gutters': {
@@ -5130,13 +5265,9 @@ function buildExtensions() {
         if (u.transactions.some((tr) => tr.isUserEvent('undo'))) {
           skipNextAutoNumber = true;
         }
-        const text = u.state.doc.toString();
-        // #450 — Always arm the debounced sync even if `u.view.composing` is
-        // true during an IME candidate commit (e.g. 清风/五笔/拼音 on Windows):
-        // `syncEditorContentSoon` checks `view.composing` when the timer fires
-        // and re-arms until composition ends, so no IME-committed edit is ever
-        // stranded without syncing to `tabs.setContent`.
-        syncEditorContentSoon(text);
+        // Avoid serializing the entire document on every keystroke; the 350ms
+        // debounced timer reads `view.state.doc.toString()` once when it fires.
+        syncEditorContentSoon();
       }
       if (u.docChanged && !u.view.composing && props.tab.language === 'markdown') {
         for (const tr of u.transactions) {
@@ -5188,10 +5319,49 @@ function maybeRestoreSession() {
 }
 
 onMounted(() => {
+  mountedEditorsByUid.set(editorUid, {
+    getTabId: () => props.tab.id,
+    getRootEl: getEditorRootEl,
+  });
   // Registered before the plain-editor early return below — this listener has
   // to exist on ALL three editor paths, and the CodeMirror-only setup that
   // follows is unreachable on Windows. (Putting it further down is what made
   // the first attempt silently no-op on the plain editors.)
+  function onInsertFrontmatter() {
+    const active = tabs.activeTab;
+    if (!active || active.language !== 'markdown') return;
+    if (!isPrimaryActiveEditor()) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const stem = (active.fileName || '').replace(/\.[^.]+$/, '');
+    const snippet = `---\ntitle: ${stem}\ndate: ${today}\ntags: []\n---\n\n`;
+    if (view) {
+      const doc = view.state.doc;
+      const firstLine = doc.lines >= 1 ? doc.line(1).text.trim() : '';
+      if (firstLine === '---' && doc.lines >= 2) {
+        const target = doc.line(2).to;
+        view.dispatch({ selection: { anchor: target }, scrollIntoView: true });
+        view.focus();
+        return;
+      }
+      const caretPos = `---\ntitle: ${stem}`.length;
+      view.dispatch({
+        changes: { from: 0, to: 0, insert: snippet },
+        selection: { anchor: caretPos },
+        scrollIntoView: true,
+        userEvent: 'input',
+      });
+      view.focus();
+      return;
+    }
+    const cur = (usePlainWindowsEditor ? plainText.value : active.content) || '';
+    if (cur.startsWith('---\n') || cur.startsWith('---\r\n')) return;
+    if (usePlainWindowsEditor) {
+      recordPlainHistory();
+      syncPlainEditorFromStore(snippet + cur);
+    }
+    tabs.setContent(active.id, snippet + cur);
+  }
+  window.addEventListener('solomd:insert-frontmatter', onInsertFrontmatter);
   window.addEventListener('solomd:transform-case', onTransformCase as EventListener);
   window.addEventListener('solomd:format-markdown', onFormatMarkdown as EventListener);
   window.addEventListener('solomd:editor-command', onEditorCommand as EventListener);
@@ -5200,6 +5370,7 @@ onMounted(() => {
   window.addEventListener('focus', syncSystemClipboardToVimRegister);
   void syncSystemClipboardToVimRegister();
   cleanupTransformCase = () => {
+    window.removeEventListener('solomd:insert-frontmatter', onInsertFrontmatter);
     window.removeEventListener('focus', syncSystemClipboardToVimRegister);
     window.removeEventListener('keydown', onPlainWindowKeydown);
     window.removeEventListener('solomd:editor-history', onEditorHistory as EventListener);
@@ -5232,6 +5403,43 @@ onMounted(() => {
     };
   }
 
+  // #650 — When opening a Markdown note with YAML frontmatter in Live Edit
+  // (and no saved caret), park the initial caret/block right AFTER the closing
+  // `---` so the frontmatter renders as a card immediately instead of raw YAML.
+  const isYamlFrontmatterBlock = (src: string): boolean => {
+    const m = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(src);
+    if (!m) return false;
+    return /^[ \t]*[A-Za-z0-9_\-\u4e00-\u9fff]+[ \t]*:/m.test(m[1]);
+  };
+  const defaultStartAfterFrontmatter = (docText: string): number => {
+    if (props.tab.language !== 'markdown' || activeEditorViewMode.value !== 'liveEdit') return 0;
+    const m = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(docText);
+    if (!m || !/^[ \t]*[A-Za-z0-9_\-\u4e00-\u9fff]+[ \t]*:/m.test(m[1])) return 0;
+    let pos = m[0].length;
+    while (pos < docText.length && (docText[pos] === '\n' || docText[pos] === '\r')) pos++;
+    return pos < docText.length ? pos : 0;
+  };
+
+  // #656 — Listen for global search clear on BOTH CodeMirror and Windows plain editor.
+  const onClearSearchHighlight = () => {
+    if (view) {
+      view.dispatch({ effects: setExternalSearchQueryEffect.of('') });
+    }
+    if (usePlainWindowsEditor) {
+      plainExternalQuery.value = '';
+      if (!plainFindOpen.value) {
+        plainMatches.value = [];
+        plainFindBoxes.value = [];
+      }
+    }
+  };
+  window.addEventListener('solomd:clear-search-highlight', onClearSearchHighlight);
+  const prevCleanupRelayout = cleanupRelayout;
+  cleanupRelayout = () => {
+    prevCleanupRelayout?.();
+    window.removeEventListener('solomd:clear-search-highlight', onClearSearchHighlight);
+  };
+
   if (usePlainWindowsEditor) {
     const savedInit = tabCaretMemory.get(props.tab.id);
     syncPlainEditorFromStore(props.tab.content);
@@ -5240,6 +5448,11 @@ onMounted(() => {
     if (savedInit && plainLiveEnabled.value && typeof savedInit.activeBlock === 'number') {
       const blocks = plainBlocks.value;
       plainActiveBlock.value = Math.max(0, Math.min(savedInit.activeBlock, Math.max(0, blocks.length - 1)));
+    } else if (plainLiveEnabled.value && plainBlocks.value.length > 1) {
+      const firstSrc = plainBlocks.value[0]?.text?.trim() ?? '';
+      if (isYamlFrontmatterBlock(firstSrc)) {
+        plainActiveBlock.value = 1;
+      }
     }
     focusPlainEditor(true);
     restorePlainScroll(savedInit);
@@ -5254,14 +5467,18 @@ onMounted(() => {
   }
   if (!host.value) return;
   const savedInit = tabCaretMemory.get(props.tab.id);
+  const initialCaret = savedInit?.caret ?? defaultStartAfterFrontmatter(props.tab.content);
   view = new EditorView({
     state: EditorState.create({
       doc: props.tab.content,
       extensions: buildExtensions(),
-      selection: { anchor: Math.max(0, Math.min(savedInit?.caret ?? 0, props.tab.content.length)) },
+      selection: { anchor: Math.max(0, Math.min(initialCaret, props.tab.content.length)) },
     }),
     parent: host.value,
   });
+  if (props.tab.language !== 'markdown') {
+    applyLanguageExtensionForTab(props.tab);
+  }
   {
     const initHead = view.state.selection.main.head;
     const initLine = view.state.doc.lineAt(initHead);
@@ -5287,7 +5504,9 @@ onMounted(() => {
   const onRelayout = () => view?.requestMeasure();
   window.addEventListener('solomd:relayout', onRelayout);
   window.addEventListener('solomd:flush-content-sync', flushContentSync);
+  const prevCleanup = cleanupRelayout;
   cleanupRelayout = () => {
+    prevCleanup?.();
     window.removeEventListener('solomd:relayout', onRelayout);
     window.removeEventListener('solomd:flush-content-sync', flushContentSync);
   };
@@ -5308,8 +5527,8 @@ function onTransformCase(e: Event) {
   const detail = (e as CustomEvent).detail || {};
   const mode: CaseMode | 'cycle' = detail.mode || 'cycle';
   // Split view mounts one Editor per pane and they all hear this event, so
-  // only the one showing the active tab may act.
-  if (props.tab.id !== tabs.activeId) return;
+  // only the primary active editor showing the active tab may act.
+  if (!isPrimaryActiveEditor()) return;
 
   if (!usePlainWindowsEditor) {
     if (!view) return;
@@ -5374,7 +5593,7 @@ function onFormatMarkdown(e: Event) {
   const detail = (e as CustomEvent).detail || {};
   let kind = detail.kind as FormatKind | 'headingCycle';
   const color = typeof detail.color === 'string' ? detail.color : undefined;
-  if (props.tab.id !== tabs.activeId) return;
+  if (!isPrimaryActiveEditor()) return;
   if (props.tab.language !== 'markdown') return;
   // 5.0 touch keyboard bar: one heading button that steps
   // paragraph → H1 → H2 → H3 → paragraph, each step an ordinary fmt.hN.
@@ -5524,7 +5743,7 @@ function readBubbleRect(): Box | null {
 
 /** Undo / redo from the touch keyboard bar, on either editor. */
 function onEditorHistory(e: Event) {
-  if (props.tab.id !== tabs.activeId) return;
+  if (!isPrimaryActiveEditor()) return;
   const op = ((e as CustomEvent).detail || {}).op as 'undo' | 'redo';
   if (!usePlainWindowsEditor) {
     if (!view) return;
@@ -5545,7 +5764,7 @@ function onEditorHistory(e: Event) {
  */
 function onPlainWindowKeydown(event: KeyboardEvent) {
   if (event.defaultPrevented) return;
-  if (props.tab.id !== tabs.activeId) return;
+  if (!isPrimaryActiveEditor()) return;
   if (settings.viewMode === 'preview' || settings.viewMode === 'reading') return;
   const active = document.activeElement;
   if (
@@ -5601,7 +5820,7 @@ function onPlainWindowKeydown(event: KeyboardEvent) {
 function onEditorCommand(e: Event) {
   const cmd = ((e as CustomEvent).detail || {}).cmd as EditorCommand;
   if (!EDITOR_COMMANDS.includes(cmd)) return;
-  if (props.tab.id !== tabs.activeId) return;
+  if (!isPrimaryActiveEditor()) return;
   if (MARKDOWN_ONLY_COMMANDS.has(cmd) && props.tab.language !== 'markdown') return;
 
   const headingMode = (c: EditorCommand) =>
@@ -6208,12 +6427,22 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  mountedEditorsByUid.delete(editorUid);
+  if (lastFocusedEditorUid === editorUid) lastFocusedEditorUid = 0;
   window.removeEventListener('solomd:split-hover-line', onSplitHoverFromPreview);
   host.value?.removeEventListener('mousemove', onEditorHostMouseMove);
   host.value?.removeEventListener('mouseleave', onEditorHostMouseLeave);
   setHoveredCmLineEl(null);
   saveCurrentTabCaret(props.tab.id);
   cancelCmScrollRestore?.();
+  cancelPlainScrollRestore?.();
+  plainPinStop?.();
+  if (plainFindInputTimer) {
+    clearTimeout(plainFindInputTimer);
+    plainFindInputTimer = null;
+  }
+  window.removeEventListener('mousemove', onPlainDragMove);
+  window.removeEventListener('mouseup', onPlainDragEnd);
   cleanupRelayout?.();
   cleanupTransformCase?.();
   cleanupTransformCase = null;
@@ -6458,6 +6687,17 @@ watch(
     if (oldId) {
       saveCurrentTabCaret(oldId);
     }
+    // #650 — When opening a Markdown note with YAML frontmatter in Live Edit
+    // (and no saved caret), park the initial caret/block right AFTER the closing
+    // `---` so the frontmatter renders as a card immediately instead of raw YAML.
+    const defaultStartAfterFrontmatter = (docText: string): number => {
+      if (props.tab.language !== 'markdown' || activeEditorViewMode.value !== 'liveEdit') return 0;
+      const m = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(docText);
+      if (!m || !/^[ \t]*[A-Za-z0-9_\-\u4e00-\u9fff]+[ \t]*:/m.test(m[1])) return 0;
+      let pos = m[0].length;
+      while (pos < docText.length && (docText[pos] === '\n' || docText[pos] === '\r')) pos++;
+      return pos < docText.length ? pos : 0;
+    };
     const saved = newId ? tabCaretMemory.get(newId) : undefined;
     if (usePlainWindowsEditor) {
       // The Editor component is reused across tabs (no :key), so switching to /
@@ -6475,6 +6715,12 @@ watch(
       if (saved && plainLiveEnabled.value && typeof saved.activeBlock === 'number') {
         const blocks = plainBlocks.value;
         plainActiveBlock.value = Math.max(0, Math.min(saved.activeBlock, Math.max(0, blocks.length - 1)));
+      } else if (plainLiveEnabled.value && plainBlocks.value.length > 1) {
+        const firstSrc = plainBlocks.value[0]?.text?.trim() ?? '';
+        const fm = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*$/.exec(firstSrc);
+        if (fm && /^[ \t]*[A-Za-z0-9_\-\u4e00-\u9fff]+[ \t]*:/m.test(fm[1])) {
+          plainActiveBlock.value = 1;
+        }
       }
       void processPlainLiveRenderedBlocks();
       focusPlainEditor(true);
@@ -6485,11 +6731,12 @@ watch(
       return;
     }
     if (!view) return;
+    const defaultAnchor = saved?.caret ?? defaultStartAfterFrontmatter(props.tab.content);
     view.setState(
       EditorState.create({
         doc: props.tab.content,
         extensions: buildExtensions(),
-        selection: { anchor: Math.min(saved?.caret ?? 0, props.tab.content.length) },
+        selection: { anchor: Math.min(defaultAnchor, props.tab.content.length) },
       })
     );
     {
@@ -6717,15 +6964,38 @@ watch(
   }
 );
 
-watch(
-  () => props.tab.language,
-  (l) => {
-    view?.dispatch({
+let plainLangLoadSeq = 0;
+function applyLanguageExtensionForTab(tab: { language: string; fileName: string }) {
+  if (!view || usePlainWindowsEditor) return;
+  if (tab.language === 'markdown') {
+    plainLangLoadSeq++;
+    view.dispatch({
       effects: [
-        langCompartment.reconfigure(l === 'markdown' ? [markdownExt()] : []),
+        langCompartment.reconfigure([markdownExt()]),
         richCompartment.reconfigure(richExtensionsFor(props.tab)),
       ],
     });
+    return;
+  }
+  const seq = ++plainLangLoadSeq;
+  view.dispatch({
+    effects: [
+      langCompartment.reconfigure([]),
+      richCompartment.reconfigure(richExtensionsFor(props.tab)),
+    ],
+  });
+  void loadPlainLanguageExtension(tab.fileName).then((ext) => {
+    if (seq !== plainLangLoadSeq || !view || props.tab.language === 'markdown') return;
+    view.dispatch({
+      effects: langCompartment.reconfigure(ext),
+    });
+  });
+}
+
+watch(
+  () => [props.tab.language, props.tab.fileName] as const,
+  () => {
+    applyLanguageExtensionForTab(props.tab);
   }
 );
 
@@ -6941,13 +7211,13 @@ function insertImageUrl(url: string, alt = ''): void {
  * via toasts. No-op (with a hint) when no uploader is configured.
  */
 async function uploadLocalImages(): Promise<void> {
-  if (!view) return;
+  if (!view && !usePlainWindowsEditor) return;
   const up0 = resolveUploader(settings as unknown as ImageUploadSettings, 'x.png');
   if (settings.imageUploader === 'none' || !up0) {
     toasts.info(t('toast.noUploaderConfigured'));
     return;
   }
-  const doc = view.state.doc.toString();
+  const doc = view ? view.state.doc.toString() : (plainText.value || props.tab.content || '');
   // Match markdown image links with a local (non-remote) src.
   const re = /!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
   const targets: { src: string }[] = [];
@@ -6991,7 +7261,8 @@ async function uploadLocalImages(): Promise<void> {
  *  absolute filesystem path for upload. */
 async function resolveLocalImageAbsPath(src: string): Promise<string | null> {
   const { resolveImagePath } = await import('../lib/image-resolve');
-  const imageRoot = parseFrontMatterImageRoot(props.tab.content) ?? null;
+  const sourceText = usePlainWindowsEditor ? (plainText.value || props.tab.content) : props.tab.content;
+  const imageRoot = parseFrontMatterImageRoot(sourceText) ?? null;
   // resolveImagePath decodes the src exactly once itself; decoding here too
   // turned a file named `100%.png` (written as `100%25.png`) into garbage.
   const abs = resolveImagePath(src, imageRoot, props.tab.filePath);
@@ -7000,6 +7271,19 @@ async function resolveLocalImageAbsPath(src: string): Promise<string | null> {
 
 /** Replace every `](oldSrc)` occurrence in the live doc with the new URL. */
 function replaceAllImageSrc(oldSrc: string, newUrl: string): void {
+  if (usePlainWindowsEditor && !view) {
+    const doc = plainText.value || props.tab.content || '';
+    const needle = `](${oldSrc})`;
+    if (!doc.includes(needle)) return;
+    const encoded = encodeImageDestination(newUrl);
+    const updated = doc.split(needle).join(`](${encoded})`);
+    if (updated !== doc) {
+      recordPlainHistory();
+      syncPlainEditorFromStore(updated, true);
+      tabs.setContent(props.tab.id, updated);
+    }
+    return;
+  }
   if (!view) return;
   const doc = view.state.doc.toString();
   const changes: { from: number; to: number; insert: string }[] = [];
@@ -7364,12 +7648,16 @@ const cls = computed(() => ({
     v-if="!usePlainWindowsEditor"
     :class="cls"
     ref="host"
+    @focusin="markEditorFocused"
+    @pointerdown="markEditorFocused"
     @contextmenu="onEditorContextMenu"
   ></div>
   <div
     v-else
     ref="plainHostEl"
     class="plain-host"
+    @focusin="markEditorFocused"
+    @pointerdown="markEditorFocused"
     @mousedown.capture="onEditorMouseDownCapture"
     @contextmenu="onEditorContextMenu"
   >
@@ -8210,14 +8498,34 @@ const cls = computed(() => ({
 }
 .plain-block__render :deep(ul),
 .plain-block__render :deep(ol) {
-  padding-left: 1.45em;
+  padding-left: 1.8em;
+}
+.plain-block__render :deep(ul.contains-task-list) {
+  padding-left: 1.25rem;
 }
 .plain-block__render :deep(ol > li) {
-  padding-left: 0;
+  padding-left: 0.2em;
 }
 .plain-block__render :deep(li::marker) {
   color: var(--text-3);
   font-variant-numeric: tabular-nums;
+}
+.plain-block__render :deep(dl) {
+  margin: 0;
+}
+.plain-block__render :deep(dt) {
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 0.7em;
+}
+.plain-block__render :deep(dt:first-child) {
+  margin-top: 0;
+}
+.plain-block__render :deep(dd) {
+  margin: 0.25em 0 0.55em 1.5em;
+  padding-left: 0.65em;
+  border-left: 2px solid var(--border);
+  color: var(--text-2);
 }
 .plain-block__render :deep(p) {
   white-space: pre-wrap;
@@ -8230,6 +8538,28 @@ const cls = computed(() => ({
 }
 .plain-block__render :deep(a:hover) {
   text-decoration-color: currentColor;
+}
+.plain-block__render :deep(.md-wikilink) {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent, #ff9f40) 10%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.plain-block__render :deep(.md-wikilink:hover) {
+  background: color-mix(in srgb, var(--accent, #ff9f40) 22%, transparent);
+  text-decoration: underline;
+}
+.plain-block__render :deep(kbd) {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  background-color: var(--md-code-bg, var(--bg-elev));
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
 }
 .plain-block__render :deep(code) {
   font-family: var(--font-mono);
@@ -8336,13 +8666,6 @@ const cls = computed(() => ({
 .plain-block__render :deep(h6.plain-block__markers) {
   margin: 1.1em 0 0.45em;
 }
-.plain-block__render :deep(ul),
-.plain-block__render :deep(ol) {
-  padding-left: 1.15em;
-}
-.plain-block__render :deep(li::marker) {
-  color: var(--text-3);
-}
 .plain-block__render :deep(table) {
   border-collapse: collapse;
   width: 100%;
@@ -8402,15 +8725,52 @@ const cls = computed(() => ({
 .plain-block__render :deep(.plain-mermaid-block),
 .plain-block__render :deep(.plain-plantuml-block),
 .plain-block__render :deep(.plain-whiteboard-block) {
+  position: relative;
   margin: 1em 0;
   max-width: 100%;
   overflow: auto;
 }
+.plain-block__render :deep(.plain-mermaid-block .cm-mermaid-zoom-btn) {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-elev) 90%, transparent);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+  z-index: 2;
+}
+.plain-block__render :deep(.plain-mermaid-block:hover .cm-mermaid-zoom-btn),
+.plain-block__render :deep(.plain-mermaid-block .cm-mermaid-zoom-btn:focus-visible) {
+  opacity: 1;
+}
+.plain-block__render :deep(.plain-mermaid-block .cm-mermaid-zoom-btn:hover) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .plain-block__render :deep(.plain-mermaid-block svg),
 .plain-block__render :deep(.plain-plantuml-block img),
 .plain-block__render :deep(.plain-whiteboard-block svg) {
+  display: block;
   max-width: 100%;
   height: auto;
+  margin-left: var(--media-margin-left, 0);
+  margin-right: var(--media-margin-right, auto);
+}
+.plain-block__render :deep(p:has(> img:only-child)),
+.plain-block__render :deep(.katex-display),
+.plain-block__render :deep(.katex-display > .katex) {
+  text-align: var(--media-align, left);
 }
 .plain-block__render :deep(.plain-whiteboard-block) {
   border: 1px solid var(--border);

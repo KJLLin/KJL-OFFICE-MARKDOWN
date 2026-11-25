@@ -10,19 +10,57 @@ import {
 } from '../lib/quick-capture-shortcut';
 
 const LS_KEY = 'solomd.settings.v1';
+const DEVICE_ID_KEY = 'solomd.deviceId.v1';
+
+/**
+ * #674 — Machine-local persistent UUID (never synced to cloud).
+ * Displayed in the Settings modal header and written into `.solomd/sync-journal.log`.
+ */
+function loadOrCreateDeviceId(): string {
+  try {
+    const existing = localStorage.getItem(DEVICE_ID_KEY);
+    if (existing && existing.trim().length >= 8) return existing.trim();
+  } catch {
+    /* ignore */
+  }
+  const generated =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : 'dev-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  try {
+    localStorage.setItem(DEVICE_ID_KEY, generated);
+  } catch {
+    /* ignore */
+  }
+  return generated;
+}
 
 // CJK + generic fallback appended after the user's chosen face. This way
 // Latin glyphs come from the user's pick while CJK still falls back to
 // a real CJK font instead of whatever the generic `monospace` happens to be.
+// #662 — `"SoloMD Circled"` is scoped via `@font-face` `unicode-range` strictly
+// to enclosed alphanumerics (`①–⑳`), guaranteeing uniform glyph size past `⑩`.
+const CIRCLED_NUM_FONT = '"SoloMD Circled"';
 const CJK_FALLBACK =
   '"PingFang SC", "PingFang TC", "Hiragino Sans GB", "Microsoft YaHei", "Heiti SC", "Noto Sans CJK SC"';
 
 export function buildEditorFontStack(face: string): string {
   const trimmed = face.trim();
-  if (!trimmed) return `${CJK_FALLBACK}, sans-serif`;
-  // If user pasted a full stack already (contains comma), use as-is but still
-  // append CJK fallback for safety.
-  if (trimmed.includes(',')) return `${trimmed}, ${CJK_FALLBACK}`;
+  if (!trimmed) return `${CIRCLED_NUM_FONT}, ${CJK_FALLBACK}, sans-serif`;
+  // If user pasted a full stack already (contains comma), prepend the circled
+  // number font and splice CJK fallback BEFORE any trailing generic family.
+  if (trimmed.includes(',')) {
+    const parts = trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+    const generics = new Set(['sans-serif', 'serif', 'monospace', 'system-ui', 'ui-sans-serif', 'ui-serif', 'ui-monospace']);
+    let tailIdx = parts.length;
+    while (tailIdx > 0 && generics.has(parts[tailIdx - 1].toLowerCase())) {
+      tailIdx--;
+    }
+    if (tailIdx < parts.length) {
+      return [CIRCLED_NUM_FONT, ...parts.slice(0, tailIdx), CJK_FALLBACK, ...parts.slice(tailIdx)].join(', ');
+    }
+    return `${CIRCLED_NUM_FONT}, ${trimmed}, ${CJK_FALLBACK}`;
+  }
   const isFileOrPath = /\.(ttf|otf|woff2|woff|ttc)$/i.test(trimmed) || /[\\/]/.test(trimmed);
   if (isFileOrPath) {
     const { stem, family } = cleanFontFamilyFromFilename(trimmed);
@@ -30,12 +68,12 @@ export function buildEditorFontStack(face: string): string {
       /\s/.test(n) && !/^["']/.test(n) ? `"${n}"` : n,
     );
     if (names.length > 0) {
-      return `${names.join(', ')}, ${CJK_FALLBACK}, "JetBrains Mono", Menlo, Consolas, monospace`;
+      return `${CIRCLED_NUM_FONT}, ${names.join(', ')}, ${CJK_FALLBACK}, "JetBrains Mono", Menlo, Consolas, monospace`;
     }
   }
   const needsQuote = /[\s/.\\]/.test(trimmed) && !/^["']/.test(trimmed);
   const quoted = needsQuote ? `"${trimmed}"` : trimmed;
-  return `${quoted}, ${CJK_FALLBACK}, "JetBrains Mono", Menlo, Consolas, monospace`;
+  return `${CIRCLED_NUM_FONT}, ${quoted}, ${CJK_FALLBACK}, "JetBrains Mono", Menlo, Consolas, monospace`;
 }
 
 /** 5.0 default editor face: the "System Sans" preset in Settings (same value,
@@ -140,6 +178,7 @@ interface Settings {
   // 5.0 — the formatting toolbar above the editor (bold, headings, lists,
   // code, links, images, tables, undo). Default ON.
   formatBar: boolean;
+  v535FormatBarDefaultOnMigrated?: boolean;
   // #353 — keep Markdown markers (`#`, `**`, …) visible in the CodeMirror
   // live views instead of hiding them off the caret line, so clicking a line
   // doesn't reflow it. Styling (heading size, bold) still applies.
@@ -204,6 +243,11 @@ interface Settings {
    *  the ⌥⌘B shortcut, or the command palette to hide it; toggling again
    *  restores all previously-enabled panes in their previous state. */
   rightSidebarHidden: boolean;
+  /** #647 — Right sidebar layout: `'tabs'` (vertical icon rail + single full-height
+   *  active pane) or `'stack'` (legacy multi-pane vertical stack with splitters). */
+  rightSidebarLayout: 'tabs' | 'stack';
+  /** #647 — Active pane id when `rightSidebarLayout === 'tabs'`. */
+  activeRightTab: string;
   livePreview: boolean;
   v503SourceModeMigrated?: boolean;
   // Editor super features
@@ -219,6 +263,27 @@ interface Settings {
   hideMenuBar: boolean;
   /** #318: show text labels next to toolbar icons (icon + label mode). */
   toolbarShowLabels: boolean;
+  /** #622: on Windows custom-titlebar, place the toolbar right after the menubar
+   *  so the tab bar row has 100% width for open tabs. */
+  toolbarInTitlebar: boolean;
+  /** #622 / #665: ordered list of visible toolbar action IDs (built-in or `cmd:<id>`). */
+  toolbarItems: string[];
+  /** #665: optional user-selected custom icon name per toolbar item ID. */
+  toolbarItemIcons: Record<string, string>;
+  /** #653: right-sidebar Snippets panel visibility. */
+  showSnippetsPanel: boolean;
+  /** #671: window position restore mode when saved bounds are partially off-screen. */
+  windowRestoreMode: 'clamp' | 'keep' | 'center';
+  /** #672: automatically group open tabs by their parent folder. */
+  autoGroupTabsByFolder: boolean;
+  /** #672: automatically open sibling supported files when opening a note. */
+  autoOpenSiblingFiles: 'off' | 'all' | 'folders';
+  /** #672: newline/comma-separated folder paths when autoOpenSiblingFiles === 'folders'. */
+  autoOpenSiblingFolders: string;
+  /** #672: comma-separated extensions to auto-open (e.g. `.md,.markdown,.txt`). */
+  autoOpenSiblingExtensions: string;
+  /** #674: machine-local persistent UUID (never synced to cloud) for multi-device sync guard. */
+  deviceId: string;
   /** #479: hide the top mobile status-bar reservation for full-screen immersion. */
   mobileHideStatusBar: boolean;
   typewriterMode: boolean;
@@ -492,6 +557,13 @@ interface Settings {
   // #572 — Include a Table of Contents page (with page numbers) at the start
   // of exported documents.
   exportIncludeTocPage: boolean;
+  // #624 / #686 — Alignment of images, diagrams, and display math blocks in exported
+  // HTML / EPUB / PDF / Word documents (`left` | `center` | `right`).
+  exportMediaAlign: 'left' | 'center' | 'right';
+  // #684 — Alignment of images, diagrams, and display math in Live Edit, Preview, and Reading views.
+  editorMediaAlign: 'left' | 'center' | 'right';
+  // #691 — Automatically apply 2-CJK-char first-line paragraph indent on DOCX export.
+  docxFirstLineIndent: boolean;
   // #606 — Format used when saving pasted clipboard images into the vault (`png` | `webp` | `jpg`).
   pastedImageFormat: PastedImageFormat;
   // v4.3.0: global UI zoom (scales the entire app — editor, preview, chrome,
@@ -719,10 +791,14 @@ interface Settings {
     showBacklinks: boolean;
     showRelationships: boolean;
     showTagsPanel: boolean;
+    showTasksPanel?: boolean;
     showNeighborhood: boolean;
     showTypesPanel: boolean;
     showHistoryPanel: boolean;
+    showInspector?: boolean;
     showAgentPanel: boolean;
+    tasks?: boolean;
+    inspector?: boolean;
   } | null;
 }
 
@@ -827,7 +903,8 @@ function defaults(): Settings {
     showLineNumbers: false,
     solidCursor: false,
     selectionBubble: true,
-    formatBar: false,
+    formatBar: true,
+    v535FormatBarDefaultOnMigrated: true,
     alwaysShowMarkers: false,
     hideActiveLineMarkers: false,
     collapseBlockSource: true,
@@ -855,6 +932,8 @@ function defaults(): Settings {
     // 5.0 — writing first: a new install opens on the text alone; the right
     // sidebar is one click (or ⌘⌥B) away. Saved settings are untouched.
     rightSidebarHidden: true,
+    rightSidebarLayout: 'tabs',
+    activeRightTab: 'outline',
     livePreview: false,
     v503SourceModeMigrated: true,
     spellCheck: true,
@@ -862,6 +941,16 @@ function defaults(): Settings {
     toolbarHidden: false,
     hideMenuBar: false,
     toolbarShowLabels: false,
+    toolbarInTitlebar: true,
+    toolbarItems: ['viewMode', 'search', 'export', 'rightSidebar', 'more'],
+    toolbarItemIcons: {} as Record<string, string>,
+    showSnippetsPanel: false,
+    windowRestoreMode: 'clamp' as 'clamp' | 'keep' | 'center',
+    autoGroupTabsByFolder: false,
+    autoOpenSiblingFiles: 'off' as 'off' | 'all' | 'folders',
+    autoOpenSiblingFolders: '',
+    autoOpenSiblingExtensions: '.md,.markdown,.txt',
+    deviceId: loadOrCreateDeviceId(),
     mobileHideStatusBar: false,
     typewriterMode: false,
     formatHints: true,
@@ -977,13 +1066,15 @@ function defaults(): Settings {
     webdavPassphrase: '',
     webdavAutoSync: false,
     webdavAutoSubdir: true,
-    webdavCategorizeFiles: true,
+    // #664 — Preserve exact 1:1 local directory structure by default instead of
+    // relocating root .md files into `笔记文档/` (which breaks relative links).
+    webdavCategorizeFiles: false,
     cloudVaultDir: '',
     cloudVaultPassphrase: '',
     cloudVaultAutoSync: false,
     cloudVaultEncrypted: false,
     cloudVaultAutoSubdir: true,
-    cloudVaultCategorizeFiles: true,
+    cloudVaultCategorizeFiles: false,
     cloudApiProvider: 'baidu',
     cloudApiToken: '',
     cloudApiClientId: '',
@@ -994,7 +1085,7 @@ function defaults(): Settings {
     cloudApiSyncMode: 'folder',
     cloudApiEncrypted: false,
     cloudApiAutoSubdir: true,
-    cloudApiCategorizeFiles: true,
+    cloudApiCategorizeFiles: false,
     cloudR2Endpoint: '',
     cloudR2Bucket: '',
     cloudR2AccessKeyId: '',
@@ -1019,6 +1110,9 @@ function defaults(): Settings {
     exportHtmlTopicNav: true,
     exportHtmlContentWidth: 960,
     exportIncludeTocPage: true,
+    exportMediaAlign: 'center' as 'left' | 'center' | 'right',
+    editorMediaAlign: 'left' as 'left' | 'center' | 'right',
+    docxFirstLineIndent: false,
     pastedImageFormat: 'png',
     alwaysOnTop: false,
     globalZoom: 1,
@@ -1060,7 +1154,7 @@ function defaults(): Settings {
     pdfPageSizeAutoMigrated: true,
     pdfTocDefaultOnMigrated: true,
     markdownAutoNumberHeadings: false,
-    rsPaneOrder: ['search', 'outline', 'backlinks', 'relationships', 'tags', 'tasks', 'neighborhood', 'types', 'history', 'inspector', 'agent'],
+    rsPaneOrder: ['search', 'outline', 'backlinks', 'relationships', 'tags', 'tasks', 'snippets', 'neighborhood', 'types', 'history', 'inspector', 'agent'],
     previewFontSize: 16,
     attachmentMode: 'shared',
     defaultExportDir: '',
@@ -1268,6 +1362,21 @@ function load(): Settings {
         merged.highlightCurrentLine = true;
         merged.v507HighlightLineMigrated = true;
       }
+      if (!parsed.v535FormatBarDefaultOnMigrated) {
+        merged.formatBar = true;
+        merged.showFormattingBar = true;
+        if (merged.viewMode === 'preview') {
+          merged.viewMode = 'liveEdit';
+        }
+        merged.v535FormatBarDefaultOnMigrated = true;
+      } else {
+        const fmtOn = Boolean(parsed.formatBar ?? parsed.showFormattingBar ?? true);
+        merged.formatBar = fmtOn;
+        merged.showFormattingBar = fmtOn;
+      }
+      if (merged.rightSidebarLayout !== 'tabs' && merged.rightSidebarLayout !== 'stack') {
+        merged.rightSidebarLayout = 'tabs';
+      }
       // D6 — a theme outside the built-in list (e.g. a hand-edited or
       // MCP-written 'system') rendered as a bare white page; reset it to the
       // default, and treat a literal 'system' as the follow-OS option.
@@ -1294,6 +1403,17 @@ const THEMES: readonly Theme[] = [
 ];
 export function isTheme(v: unknown): v is Theme {
   return typeof v === 'string' && (THEMES as readonly string[]).includes(v);
+}
+export function themeFamily(theme: Theme): 'light' | 'dark' {
+  switch (theme) {
+    case 'light':
+    case 'lucius':
+    case 'github-light':
+    case 'solarized-light':
+      return 'light';
+    default:
+      return 'dark';
+  }
 }
 function systemTheme(): Theme {
   const dark =
@@ -1582,10 +1702,14 @@ export const useSettingsStore = defineStore('settings', {
           showBacklinks: this.showBacklinks,
           showRelationships: this.showRelationships,
           showTagsPanel: this.showTagsPanel,
+          showTasksPanel: this.showTasksPanel,
           showNeighborhood: this.showNeighborhood,
           showTypesPanel: this.showTypesPanel,
           showHistoryPanel: this.showHistoryPanel,
+          showInspector: this.showInspector,
           showAgentPanel: this.showAgentPanel,
+          tasks: this.showTasksPanel,
+          inspector: this.showInspector,
         };
         this.rightSidebarHidden = true;
       } else {
@@ -1595,13 +1719,29 @@ export const useSettingsStore = defineStore('settings', {
           this.showBacklinks = saved.showBacklinks;
           this.showRelationships = saved.showRelationships;
           this.showTagsPanel = saved.showTagsPanel;
+          if (saved.showTasksPanel !== undefined || saved.tasks !== undefined) {
+            this.showTasksPanel = Boolean(saved.showTasksPanel ?? saved.tasks);
+          }
           this.showNeighborhood = saved.showNeighborhood;
           this.showTypesPanel = saved.showTypesPanel;
           this.showHistoryPanel = saved.showHistoryPanel;
+          if (saved.showInspector !== undefined || saved.inspector !== undefined) {
+            this.showInspector = Boolean(saved.showInspector ?? saved.inspector);
+          }
           this.showAgentPanel = saved.showAgentPanel;
           this._rsPanesBeforeHide = null;
         }
-        if (!this.showBacklinks && !this.showRelationships && !this.showTagsPanel && !this.showTypesPanel && !this.showNeighborhood && !this.showHistoryPanel && !this.showAgentPanel) {
+        if (
+          !this.showBacklinks &&
+          !this.showRelationships &&
+          !this.showTagsPanel &&
+          !this.showTasksPanel &&
+          !this.showTypesPanel &&
+          !this.showNeighborhood &&
+          !this.showHistoryPanel &&
+          !this.showInspector &&
+          !this.showAgentPanel
+        ) {
           this.showBacklinks = true;
           this.showTagsPanel = true;
         }
@@ -1628,10 +1768,14 @@ export const useSettingsStore = defineStore('settings', {
       showBacklinks: boolean;
       showRelationships: boolean;
       showTagsPanel: boolean;
+      showTasksPanel?: boolean;
       showNeighborhood: boolean;
       showTypesPanel: boolean;
       showHistoryPanel: boolean;
+      showInspector?: boolean;
       showAgentPanel: boolean;
+      tasks?: boolean;
+      inspector?: boolean;
     }) {
       this._rsPanesBeforeHide = paneBeforeToggle;
       this.rightSidebarHidden = true;
@@ -1644,6 +1788,19 @@ export const useSettingsStore = defineStore('settings', {
         this.rightSidebarHidden = false;
         this.persist();
       }
+    },
+    setRightSidebarLayout(layout: 'tabs' | 'stack') {
+      this.rightSidebarLayout = layout;
+      this.persist();
+    },
+    toggleRightSidebarLayout() {
+      this.rightSidebarLayout = this.rightSidebarLayout === 'tabs' ? 'stack' : 'tabs';
+      this.persist();
+    },
+    setActiveRightTab(id: string) {
+      if (!id || this.activeRightTab === id) return;
+      this.activeRightTab = id;
+      this.persist();
     },
     toggleLivePreview() {
       this.livePreview = !this.livePreview;
@@ -1671,6 +1828,74 @@ export const useSettingsStore = defineStore('settings', {
     },
     toggleToolbarShowLabels() {
       this.toolbarShowLabels = !this.toolbarShowLabels;
+      this.persist();
+    },
+    toggleToolbarInTitlebar() {
+      this.toolbarInTitlebar = !this.toolbarInTitlebar;
+      this.persist();
+    },
+    toggleToolbarItem(id: string) {
+      const cur = Array.isArray(this.toolbarItems) ? [...this.toolbarItems] : [];
+      const idx = cur.indexOf(id);
+      if (idx >= 0) {
+        cur.splice(idx, 1);
+      } else {
+        cur.push(id);
+      }
+      this.toolbarItems = cur;
+      this.persist();
+    },
+    setToolbarItems(items: string[]) {
+      this.toolbarItems = [...items];
+      this.persist();
+    },
+    resetToolbarItems() {
+      this.toolbarItems = ['viewMode', 'search', 'export', 'rightSidebar', 'more'];
+      this.toolbarItemIcons = {};
+      this.persist();
+    },
+    setToolbarItemIcon(id: string, icon: string) {
+      const next = { ...(this.toolbarItemIcons || {}) };
+      if (!icon) delete next[id];
+      else next[id] = icon;
+      this.toolbarItemIcons = next;
+      this.persist();
+    },
+    setWindowRestoreMode(mode: 'clamp' | 'keep' | 'center') {
+      this.windowRestoreMode = mode;
+      this.persist();
+      void import('@tauri-apps/api/core')
+        .then(({ invoke }) => invoke('save_window_restore_mode', { mode }))
+        .catch(() => {});
+    },
+    toggleAutoGroupTabsByFolder() {
+      this.autoGroupTabsByFolder = !this.autoGroupTabsByFolder;
+      this.persist();
+    },
+    setAutoOpenSiblingFiles(mode: 'off' | 'all' | 'folders') {
+      this.autoOpenSiblingFiles = mode;
+      this.persist();
+    },
+    setAutoOpenSiblingFolders(val: string) {
+      this.autoOpenSiblingFolders = val;
+      this.persist();
+    },
+    setAutoOpenSiblingExtensions(val: string) {
+      this.autoOpenSiblingExtensions = val;
+      this.persist();
+    },
+    toggleSnippetsPanel() {
+      if (this.rightSidebarLayout === 'tabs' && this.showSnippetsPanel && !this.rightSidebarHidden && this.activeRightTab !== 'snippets') {
+        this.activeRightTab = 'snippets';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
+      this.showSnippetsPanel = !this.showSnippetsPanel;
+      if (this.showSnippetsPanel) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'snippets';
+      }
       this.persist();
     },
     toggleMobileHideStatusBar() {
@@ -1760,13 +1985,31 @@ export const useSettingsStore = defineStore('settings', {
       this.persist();
     },
     toggleBacklinks() {
+      if (this.rightSidebarLayout === 'tabs' && this.showBacklinks && !this.rightSidebarHidden && this.activeRightTab !== 'backlinks') {
+        this.activeRightTab = 'backlinks';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
       this.showBacklinks = !this.showBacklinks;
-      if (this.showBacklinks) this.ensureRightSidebarVisible();
+      if (this.showBacklinks) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'backlinks';
+      }
       this.persist();
     },
     toggleRelationships() {
+      if (this.rightSidebarLayout === 'tabs' && this.showRelationships && !this.rightSidebarHidden && this.activeRightTab !== 'relationships') {
+        this.activeRightTab = 'relationships';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
       this.showRelationships = !this.showRelationships;
-      if (this.showRelationships) this.ensureRightSidebarVisible();
+      if (this.showRelationships) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'relationships';
+      }
       this.persist();
     },
     toggleSpellcheckEnabled() {
@@ -1774,28 +2017,74 @@ export const useSettingsStore = defineStore('settings', {
       this.persist();
     },
     toggleTagsPanel() {
+      if (this.rightSidebarLayout === 'tabs' && this.showTagsPanel && !this.rightSidebarHidden && this.activeRightTab !== 'tags') {
+        this.activeRightTab = 'tags';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
       this.showTagsPanel = !this.showTagsPanel;
-      if (this.showTagsPanel) this.ensureRightSidebarVisible();
+      if (this.showTagsPanel) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'tags';
+      }
       this.persist();
     },
     toggleTasksPanel() {
+      if (this.rightSidebarLayout === 'tabs' && this.showTasksPanel && !this.rightSidebarHidden && this.activeRightTab !== 'tasks') {
+        this.activeRightTab = 'tasks';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
       this.showTasksPanel = !this.showTasksPanel;
+      if (this.showTasksPanel) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'tasks';
+      }
       this.persist();
     },
     toggleNeighborhood() {
+      if (this.rightSidebarLayout === 'tabs' && this.showNeighborhood && !this.rightSidebarHidden && this.activeRightTab !== 'neighborhood') {
+        this.activeRightTab = 'neighborhood';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
       this.showNeighborhood = !this.showNeighborhood;
-      if (this.showNeighborhood) this.ensureRightSidebarVisible();
+      if (this.showNeighborhood) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'neighborhood';
+      }
       this.persist();
     },
     // v4.6 F2 — toggle the Types (types-as-lenses) sidebar pane.
     toggleTypesPanel() {
+      if (this.rightSidebarLayout === 'tabs' && this.showTypesPanel && !this.rightSidebarHidden && this.activeRightTab !== 'types') {
+        this.activeRightTab = 'types';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
       this.showTypesPanel = !this.showTypesPanel;
-      if (this.showTypesPanel) this.ensureRightSidebarVisible();
+      if (this.showTypesPanel) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'types';
+      }
       this.persist();
     },
     toggleAgentPanel() {
+      if (this.rightSidebarLayout === 'tabs' && this.showAgentPanel && !this.rightSidebarHidden && this.activeRightTab !== 'agent') {
+        this.activeRightTab = 'agent';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
       this.showAgentPanel = !this.showAgentPanel;
-      if (this.showAgentPanel) this.ensureRightSidebarVisible();
+      if (this.showAgentPanel) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'agent';
+      }
       this.persist();
     },
     toggleAgentAllowWrite() {
@@ -1912,13 +2201,21 @@ export const useSettingsStore = defineStore('settings', {
       this.persist();
     },
     toggleFormattingBar() {
-      this.formatBar = !this.formatBar;
-      this.showFormattingBar = this.formatBar;
+      const next = !(this.formatBar || this.showFormattingBar);
+      this.formatBar = next;
+      this.showFormattingBar = next;
+      if (next && this.viewMode === 'preview') {
+        this.viewMode = 'liveEdit';
+      }
       this.persist();
     },
     toggleFormatBar() {
-      this.formatBar = !this.formatBar;
-      this.showFormattingBar = this.formatBar;
+      const next = !(this.formatBar || this.showFormattingBar);
+      this.formatBar = next;
+      this.showFormattingBar = next;
+      if (next && this.viewMode === 'preview') {
+        this.viewMode = 'liveEdit';
+      }
       this.persist();
     },
     toggleSeparateTabBarRow() {
@@ -1950,14 +2247,32 @@ export const useSettingsStore = defineStore('settings', {
       this.persist();
     },
     toggleHistoryPanel() {
+      if (this.rightSidebarLayout === 'tabs' && this.showHistoryPanel && !this.rightSidebarHidden && this.activeRightTab !== 'history') {
+        this.activeRightTab = 'history';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
       this.showHistoryPanel = !this.showHistoryPanel;
-      if (this.showHistoryPanel) this.ensureRightSidebarVisible();
+      if (this.showHistoryPanel) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'history';
+      }
       this.persist();
     },
     /** v4.6 F1 — toggle the Properties inspector pane (⌘⇧I). */
     toggleInspector() {
+      if (this.rightSidebarLayout === 'tabs' && this.showInspector && !this.rightSidebarHidden && this.activeRightTab !== 'inspector') {
+        this.activeRightTab = 'inspector';
+        this.ensureRightSidebarVisible();
+        this.persist();
+        return;
+      }
       this.showInspector = !this.showInspector;
-      if (this.showInspector) this.ensureRightSidebarVisible();
+      if (this.showInspector) {
+        this.ensureRightSidebarVisible();
+        this.activeRightTab = 'inspector';
+      }
       this.persist();
     },
     setRightSidebarPaneHeight(paneId: string, px: number) {
@@ -2342,6 +2657,18 @@ export const useSettingsStore = defineStore('settings', {
     setExportIncludeTocPage(enabled: boolean) {
       this.exportIncludeTocPage = Boolean(enabled);
       this.pdfDefaults.toc = this.exportIncludeTocPage;
+      this.persist();
+    },
+    setExportMediaAlign(align: 'left' | 'center' | 'right') {
+      this.exportMediaAlign = align === 'left' || align === 'right' ? align : 'center';
+      this.persist();
+    },
+    setEditorMediaAlign(align: 'left' | 'center' | 'right') {
+      this.editorMediaAlign = align === 'center' || align === 'right' ? align : 'left';
+      this.persist();
+    },
+    toggleDocxFirstLineIndent() {
+      this.docxFirstLineIndent = !this.docxFirstLineIndent;
       this.persist();
     },
     // #7 — Typora-style custom path template (used when attachmentMode==='custom').

@@ -330,6 +330,7 @@ export function useCommands(): Command[] {
     { id: 'view.toggleSpellCheck', title: 'View: Toggle Spell Check', run: () => settings.toggleSpellCheck() },
     { id: 'view.toggleFocusMode', title: 'View: Toggle Focus Mode', shortcut: kb('view.toggleFocusMode'), run: () => settings.toggleFocusMode() },
     { id: 'view.toggleToolbar', title: 'View: Show / Hide Toolbar Buttons', shortcut: kb('view.toggleToolbar'), run: () => settings.toggleToolbarHidden() },
+    { id: 'view.toggleFormatBar', title: 'View: Show / Hide Formatting Toolbar', run: () => settings.toggleFormatBar() },
     { id: 'view.toggleMenuBar', title: 'View: Show / Hide Menu Bar', run: () => settings.toggleHideMenuBar() },
     { id: 'view.toggleTypewriter', title: 'View: Toggle Typewriter Mode', shortcut: kb('view.toggleTypewriter'), run: () => settings.toggleTypewriterMode() },
     { id: 'view.zoomUiIn', title: 'UI: Zoom In', shortcut: kb('view.zoomUiIn'), run: () => settings.zoomIn() },
@@ -602,6 +603,12 @@ export function useCommands(): Command[] {
     // there is nothing selected. Shift+F3 cycles lower → UPPER → Title, which
     // is the Word convention most writers already have in their fingers.
     {
+      id: 'editor.insertFrontmatter',
+      title: 'Insert YAML Frontmatter',
+      hint: 'Add or focus leading YAML metadata block (title, date, tags)',
+      run: () => window.dispatchEvent(new CustomEvent('solomd:insert-frontmatter')),
+    },
+    {
       id: 'editor.caseCycle',
       title: 'Cycle Case (lower / UPPER / Title)',
       hint: 'Selection, or the word under the cursor',
@@ -778,6 +785,12 @@ export function useCommands(): Command[] {
       title: 'View: Toggle Saved Views Panel',
       hint: 'Show / hide the Saved Views section in the left sidebar',
       run: () => settings.toggleViewsPanel(),
+    },
+    {
+      id: 'view.toggleSnippets',
+      title: 'View: Toggle Snippets Panel',
+      hint: 'Show / hide the Snippets panel in the sidebar',
+      run: () => settings.toggleSnippetsPanel(),
     },
     {
       id: 'views.create',
