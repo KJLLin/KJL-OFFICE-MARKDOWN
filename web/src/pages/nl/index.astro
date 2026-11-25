@@ -1,0 +1,40 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Hero from '../../components/Hero.astro';
+import V5Showcase from '../../components/V5Showcase.astro';
+import BuiltByClaude from '../../components/BuiltByClaude.astro';
+import UseCases from '../../components/UseCases.astro';
+import Principles from '../../components/Principles.astro';
+import Features from '../../components/Features.astro';
+import Compare from '../../components/Compare.astro';
+import Download from '../../components/Download.astro';
+import Faq from '../../components/Faq.astro';
+import Contact from '../../components/Contact.astro';
+import Sponsor from '../../components/Sponsor.astro';
+import Footer from '../../components/Footer.astro';
+
+const lang = 'nl' as const;
+---
+
+<Layout
+  title="SoloMD — Alle rust van Typora + gratis versleutelde synchronisatie op 5 platformen & lokale AI (Open-source Markdown-editor)"
+  description="Pure WYSIWYG-schrijven zoals Typora, plus gratis versleutelde synchronisatie op macOS, Windows, Linux, iOS en Android, ingebouwde export naar 9 formaten (zonder Pandoc), lokale RAG-zoekfunctie, 20+ BYOK / lokale AI-providers en een 16-tool MCP-server (~14–30 MB, MIT)."
+  lang={lang}
+>
+  <Header lang={lang} />
+  <main id="main">
+    <Hero lang={lang} />
+    <V5Showcase lang={lang} />
+    <BuiltByClaude lang={lang} />
+    <UseCases lang={lang} />
+    <Principles lang={lang} />
+    <Features lang={lang} />
+    <Compare lang={lang} />
+    <Download lang={lang} />
+    <Faq lang={lang} />
+    <Contact lang={lang} />
+    <Sponsor lang={lang} />
+  </main>
+  <Footer lang={lang} />
+</Layout>

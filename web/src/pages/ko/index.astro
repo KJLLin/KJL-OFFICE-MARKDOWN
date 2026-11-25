@@ -1,0 +1,40 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Hero from '../../components/Hero.astro';
+import V5Showcase from '../../components/V5Showcase.astro';
+import BuiltByClaude from '../../components/BuiltByClaude.astro';
+import UseCases from '../../components/UseCases.astro';
+import Principles from '../../components/Principles.astro';
+import Features from '../../components/Features.astro';
+import Compare from '../../components/Compare.astro';
+import Download from '../../components/Download.astro';
+import Faq from '../../components/Faq.astro';
+import Contact from '../../components/Contact.astro';
+import Sponsor from '../../components/Sponsor.astro';
+import Footer from '../../components/Footer.astro';
+
+const lang = 'ko' as const;
+---
+
+<Layout
+  title="SoloMD — Typora의 차분함 + 5대 플랫폼 무료 암호화 동기화 및 로컬 AI 마크다운 에디터"
+  description="Typora 스타일의 순수 WYSIWYG 집필 환경에 macOS·Windows·Linux·iOS·Android 무료 암호화 동기화, Pandoc 설치가 필요 없는 9가지 포맷 내보내기, 로컬 RAG 검색, OPR 로컬 AI(Ollama / LM Studio) + 20개 이상 BYOK AI 및 16개 도구 MCP 서버를 통합한 ~14–30 MB MIT 오픈소스 앱."
+  lang={lang}
+>
+  <Header lang={lang} />
+  <main id="main">
+    <Hero lang={lang} />
+    <V5Showcase lang={lang} />
+    <BuiltByClaude lang={lang} />
+    <UseCases lang={lang} />
+    <Principles lang={lang} />
+    <Features lang={lang} />
+    <Compare lang={lang} />
+    <Download lang={lang} />
+    <Faq lang={lang} />
+    <Contact lang={lang} />
+    <Sponsor lang={lang} />
+  </main>
+  <Footer lang={lang} />
+</Layout>

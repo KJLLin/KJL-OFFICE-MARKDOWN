@@ -1,0 +1,97 @@
+---
+import { getT, type Lang } from '../i18n/translations';
+interface Props { lang: Lang }
+const { lang } = Astro.props;
+const tr = getT(lang);
+const isZh = lang === 'zh';
+const architectHref = isZh
+  ? 'https://doaipm.com/zh/about/?utm_source=solomd_bbc#work-with-me'
+  : 'https://doaipm.com/en/about/?utm_source=solomd_bbc#work-with-me';
+---
+
+<section id="built-by-claude" class="bbc">
+  <div class="container">
+    <div class="bbc__card">
+      <div class="bbc__icon" aria-hidden="true">🤖</div>
+      <div class="bbc__body">
+        <h2>{tr.builtByClaude.heading}</h2>
+        <p>{tr.builtByClaude.body}</p>
+        <p class="bbc__note">{tr.builtByClaude.note}</p>
+        <p class="bbc__arch">
+          {isZh ? (
+            <>同一套「1 名产品架构师 + Claude Code」流水线还独立交付了 <a href="https://unterm.app" target="_blank" rel="noopener"><strong>Unterm</strong></a>（自研 Rust + wgpu 终端内核，152 个 MCP 方法与 Action Gateway）。</>
+          ) : (
+            <>The same 1-architect + Claude Code pipeline also shipped <a href="https://unterm.app" target="_blank" rel="noopener"><strong>Unterm</strong></a> — a custom Rust + wgpu terminal kernel exposing 152 MCP methods with an Action Gateway.</>
+          )}
+        </p>
+        <div class="bbc__actions">
+          <a class="bbc__link" href="https://github.com/zhitongblog/solomd">{tr.builtByClaude.cta} →</a>
+          <a class="bbc__link bbc__link--hire" href={architectHref} target="_blank" rel="noopener">
+            {isZh ? '💼 预约 100% 异步远程架构合作 (MCP / Rust / Tauri) →' : '💼 Hire the architect (100% async MCP / Rust / Tauri contracts) →'}
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* A single band rather than a card grid: this is a disclosure, not a feature.
+     It sits directly under the facts so nobody has to scroll to find out who
+     wrote the thing they are about to trust with their notes. */
+  .bbc { padding-top: 8px; }
+  .bbc__card {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 14px;
+    padding: 24px 26px;
+  }
+  .bbc__icon { font-size: 30px; line-height: 1.1; flex: none; }
+  .bbc__body { min-width: 0; }
+  .bbc__body h2 {
+    font-size: 20px;
+    margin: 0 0 10px;
+  }
+  .bbc__body p {
+    margin: 0 0 10px;
+    max-width: 68ch;
+  }
+  .bbc__note {
+    color: var(--text-muted, inherit);
+    font-size: 0.95em;
+  }
+  .bbc__arch {
+    font-size: 0.94em;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border);
+  }
+  .bbc__arch a {
+    color: inherit;
+    text-decoration: underline;
+  }
+  .bbc__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+    margin-top: 6px;
+  }
+  .bbc__link {
+    display: inline-block;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .bbc__link:hover { text-decoration: underline; }
+  .bbc__link--hire {
+    font-size: 0.94em;
+  }
+
+  @media (max-width: 560px) {
+    .bbc__card { flex-direction: column; gap: 12px; padding: 20px; }
+  }
+</style>

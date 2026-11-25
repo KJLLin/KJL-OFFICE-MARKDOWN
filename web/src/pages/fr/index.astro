@@ -1,0 +1,40 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Hero from '../../components/Hero.astro';
+import V5Showcase from '../../components/V5Showcase.astro';
+import BuiltByClaude from '../../components/BuiltByClaude.astro';
+import UseCases from '../../components/UseCases.astro';
+import Principles from '../../components/Principles.astro';
+import Features from '../../components/Features.astro';
+import Compare from '../../components/Compare.astro';
+import Download from '../../components/Download.astro';
+import Faq from '../../components/Faq.astro';
+import Contact from '../../components/Contact.astro';
+import Sponsor from '../../components/Sponsor.astro';
+import Footer from '../../components/Footer.astro';
+
+const lang = 'fr' as const;
+---
+
+<Layout
+  title="SoloMD — Tout le calme de Typora + synchronisation chiffrée sur 5 plateformes et IA locale (Éditeur Markdown libre)"
+  description="L’écriture Pure WYSIWYG de Typora alliée à la synchronisation chiffrée gratuite sur macOS, Windows, Linux, iOS et Android, l’export natif en 9 formats (sans Pandoc), la recherche sémantique RAG locale, 20+ fournisseurs IA BYOK / Ollama local et un serveur MCP à 16 outils (~14–30 Mo, licence MIT)."
+  lang={lang}
+>
+  <Header lang={lang} />
+  <main id="main">
+    <Hero lang={lang} />
+    <V5Showcase lang={lang} />
+    <BuiltByClaude lang={lang} />
+    <UseCases lang={lang} />
+    <Principles lang={lang} />
+    <Features lang={lang} />
+    <Compare lang={lang} />
+    <Download lang={lang} />
+    <Faq lang={lang} />
+    <Contact lang={lang} />
+    <Sponsor lang={lang} />
+  </main>
+  <Footer lang={lang} />
+</Layout>

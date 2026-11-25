@@ -1,0 +1,40 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Hero from '../../components/Hero.astro';
+import V5Showcase from '../../components/V5Showcase.astro';
+import BuiltByClaude from '../../components/BuiltByClaude.astro';
+import UseCases from '../../components/UseCases.astro';
+import Principles from '../../components/Principles.astro';
+import Features from '../../components/Features.astro';
+import Compare from '../../components/Compare.astro';
+import Download from '../../components/Download.astro';
+import Faq from '../../components/Faq.astro';
+import Contact from '../../components/Contact.astro';
+import Sponsor from '../../components/Sponsor.astro';
+import Footer from '../../components/Footer.astro';
+
+const lang = 'pl' as const;
+---
+
+<Layout
+  title="SoloMD — Spokój Typory + darmowa szyfrowana synchronizacja na 5 platformach i lokalna AI (Edytor Markdown Open Source)"
+  description="Pisanie Pure WYSIWYG w stylu Typory połączone z darmową szyfrowaną synchronizacją na macOS, Windows, Linux, iOS i Androidzie, wbudowanym eksportem do 9 formatów (bez Pandoca), lokalnym wyszukiwaniem RAG, 20+ dostawcami AI BYOK / Ollama oraz serwerem MCP (~14–30 MB, MIT)."
+  lang={lang}
+>
+  <Header lang={lang} />
+  <main id="main">
+    <Hero lang={lang} />
+    <V5Showcase lang={lang} />
+    <BuiltByClaude lang={lang} />
+    <UseCases lang={lang} />
+    <Principles lang={lang} />
+    <Features lang={lang} />
+    <Compare lang={lang} />
+    <Download lang={lang} />
+    <Faq lang={lang} />
+    <Contact lang={lang} />
+    <Sponsor lang={lang} />
+  </main>
+  <Footer lang={lang} />
+</Layout>
