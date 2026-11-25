@@ -20,7 +20,7 @@ withDefaults(defineProps<{
   >
     <rect width="1024" height="1024" rx="206" fill="#121110" />
     <circle cx="512" cy="474" r="390" fill="#050505" opacity="0.86" />
-    <g fill="#ff9f40">
+    <g fill="#3a8cf2">
       <path d="M332 210H456L332 824H208Z" />
       <path d="M596 210H720L596 824H472Z" />
       <path d="M158 354H846L820 482H132Z" />
@@ -28,7 +28,7 @@ withDefaults(defineProps<{
     </g>
     <path d="M512 434 590 512 512 590 434 512Z" fill="#151413" />
     <path d="M512 454 570 512 512 570 454 512Z" fill="#fff9ef" />
-    <path d="M512 478 546 512 512 546 478 512Z" fill="#ff9f40" />
+    <path d="M512 478 546 512 512 546 478 512Z" fill="#3a8cf2" />
     <circle cx="512" cy="512" r="10" fill="#fff9ef" />
   </svg>
 </template>

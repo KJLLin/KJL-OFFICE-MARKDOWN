@@ -43,7 +43,7 @@ const IMAGE_CSS = `
        breathing room from the content above. Without it, 36px keeps
        short notes from looking like they have a void underneath. */
     padding: 48px 56px 36px;
-    color: #1f1d1a;
+    color: #16202e;
     background: #ffffff;
     font: 15px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto,
       "Helvetica Neue", Arial,
@@ -54,26 +54,26 @@ const IMAGE_CSS = `
   }
   .img-page h1, .img-page h2, .img-page h3,
   .img-page h4, .img-page h5, .img-page h6 {
-    line-height: 1.25; font-weight: 700; color: #1f1d1a;
+    line-height: 1.25; font-weight: 700; color: #16202e;
     margin: 1.6em 0 0.5em;
   }
   .img-page h1:first-child, .img-page h2:first-child { margin-top: 0; }
-  .img-page h1 { font-size: 2em; border-bottom: 2px solid #ff9f40; padding-bottom: .3em; }
-  .img-page h2 { font-size: 1.5em; border-bottom: 1px solid #e6e2d8; padding-bottom: .25em; }
+  .img-page h1 { font-size: 2em; border-bottom: 2px solid #3a8cf2; padding-bottom: .3em; }
+  .img-page h2 { font-size: 1.5em; border-bottom: 1px solid #dfe6f0; padding-bottom: .25em; }
   .img-page h3 { font-size: 1.2em; }
   .img-page p { margin: .85em 0; }
-  .img-page a { color: #ff9f40; text-decoration: none; }
+  .img-page a { color: #1b5ed0; text-decoration: none; }
   .img-page code {
     font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
-    font-size: .88em; background: #f3efe7; padding: .15em .45em; border-radius: 4px;
-    color: #8a4a00;
+    font-size: .88em; background: #eff3fa; padding: .15em .45em; border-radius: 4px;
+    color: #1d4f8f;
   }
   .img-page pre {
-    background: #f3efe7; padding: 14px 18px; border-radius: 8px;
+    background: #eff3fa; padding: 14px 18px; border-radius: 8px;
     overflow-x: auto; margin: 1.1em 0; line-height: 1.55;
-    border: 1px solid #e6e2d8;
+    border: 1px solid #dfe6f0;
   }
-  .img-page pre code { background: transparent; padding: 0; color: #1f1d1a; }
+  .img-page pre code { background: transparent; padding: 0; color: #16202e; }
   .img-page.cb-wrap-on pre {
     white-space: pre-wrap;
     overflow-wrap: break-word;
@@ -107,24 +107,24 @@ const IMAGE_CSS = `
     width: 2.6em;
     padding-right: 0.6em;
     text-align: right;
-    color: #8a857c;
-    border-right: 1px solid #e6e2d8;
+    color: #8d99a9;
+    border-right: 1px solid #dfe6f0;
     user-select: none;
     -webkit-user-select: none;
   }
   .img-page blockquote {
-    border-left: 4px solid #ff9f40; margin: 1.3em 0; padding: .5em 1.1em;
-    color: #6a6560; font-style: italic; background: #fff7ec;
+    border-left: 4px solid #3a8cf2; margin: 1.3em 0; padding: .5em 1.1em;
+    color: #5b6779; font-style: italic; background: #f2f6fd;
     border-radius: 0 4px 4px 0;
   }
   .img-page ul, .img-page ol { padding-left: 1.8em; margin: .9em 0; }
   .img-page table { border-collapse: collapse; margin: 1.3em 0; width: 100%; font-size: .95em; }
   /* #370 — long unbreakable runs break inside the cell, not past the card. */
-  .img-page th, .img-page td { border: 1px solid #e6e2d8; padding: 7px 13px; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
+  .img-page th, .img-page td { border: 1px solid #dfe6f0; padding: 7px 13px; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
   .img-page th::after, .img-page td::after { content: '\\00a0'; display: inline-block; width: 0; overflow: hidden; visibility: hidden; }
   .img-page .cell-nowrap { white-space: nowrap; }
-  .img-page thead th { background: #ffe7cc; font-weight: 700; border-bottom: 2px solid #ff9f40; }
-  .img-page hr { border: none; border-top: 1px solid #e6e2d8; margin: 2em 0; }
+  .img-page thead th { background: #e8f0fe; font-weight: 700; border-bottom: 2px solid #3a8cf2; }
+  .img-page hr { border: none; border-top: 1px solid #dfe6f0; margin: 2em 0; }
   .img-page img { max-width: 100%; border-radius: 6px; margin: 1em 0; }
   .img-page .mermaid-block { display: flex; justify-content: center; margin: 1.5em 0; }
   .img-page .mermaid-block svg { max-width: 100%; height: auto; }
@@ -138,13 +138,13 @@ const IMAGE_CSS = `
   .img-footer {
     margin-top: 28px;
     padding-top: 14px;
-    border-top: 1px solid #e6e2d8;
+    border-top: 1px solid #dfe6f0;
     font-size: 11px;
-    color: #b8b6ad;
+    color: #94a1b3;
     text-align: center;
     font-family: -apple-system, sans-serif;
   }
-  .img-footer .brand { color: #ff9f40; font-weight: 600; }
+  .img-footer .brand { color: #3a8cf2; font-weight: 600; }
 `;
 
 async function processMermaidBlocks(container: HTMLElement) {
@@ -210,7 +210,7 @@ export async function markdownToImageBlob(
   if (opts.branding) {
     const footer = document.createElement('div');
     footer.className = 'img-footer';
-    footer.innerHTML = `Created with <span class="brand">SoloMD</span> · solomd.app`;
+    footer.innerHTML = `Created with <span class="brand">SoloMD</span> · github.com/KJLLin/KJL-OFFICE-Markdown`;
     page.appendChild(footer);
   }
 

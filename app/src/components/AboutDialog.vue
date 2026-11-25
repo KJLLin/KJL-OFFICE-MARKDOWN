@@ -8,6 +8,7 @@ import Icons from './Icons.vue';
 import SupportDialog from './SupportDialog.vue';
 import { useI18n } from '../i18n';
 import { IS_APP_STORE_BUILD } from '../lib/app-build';
+import { KJL_SUPPORT_PROMPTS } from '../lib/kjl-flags';
 import {
   supporterRecord,
   iapUseStoreFlow,
@@ -56,7 +57,7 @@ const promoters = ref<string[]>([
 const testers = ref<string[]>(['张工', '冰瞬若风', 'tyysoft(太阳雨)', 'lcfactorization', 'ScienceZone', 'Limoncello-Zoey', 'davi-jorge-art', 'zhuhaisto', 'licryle', 'ed-edwin', 'xjfnet', 'Snowboy801']);
 let sponsorsLoaded = false;
 async function loadSponsors() {
-  if (IS_APP_STORE_BUILD || sponsorsLoaded) return;
+  if (!KJL_SUPPORT_PROMPTS || IS_APP_STORE_BUILD || sponsorsLoaded) return;
   sponsorsLoaded = true;
   try {
     const res = await fetch('https://solomd.app/sponsors.json', { signal: AbortSignal.timeout(5000) });
@@ -84,15 +85,18 @@ watch(() => props.open, (o) => {
   }
 }, { immediate: true });
 
+// 上游项目名拆成两段拼接：打包脚本会把界面里连续的上游品牌名替换成本项目名，
+// 而署名处必须保留上游原名，故用拼接绕开该替换。
+const UPSTREAM_NAME = ['Solo', 'MD'].join('');
+
 const links = {
-  website: 'https://solomd.app',
-  github: 'https://github.com/zhitongblog/solomd',
-  // Update/version-history surfaces point at solomd.app, not GitHub: the
-  // site serves mainland users (Cloudflare edge + Gitee mirror links) where
-  // github.com often doesn't resolve. Same policy as the update toast (#154).
-  releases: 'https://solomd.app/whats-new',
-  sponsor: 'https://solomd.app/#sponsor',
-  promote: 'https://solomd.app/promote',
+  website: 'https://github.com/KJLLin/KJL-OFFICE-Markdown',
+  github: 'https://github.com/KJLLin/KJL-OFFICE-Markdown',
+  // 本构建自己发版，更新日志直接指向本仓库的 Releases 页。
+  releases: 'https://github.com/KJLLin/KJL-OFFICE-Markdown/releases',
+  upstream: 'https://github.com/zhitongblog/solomd',
+  sponsor: 'https://github.com/KJLLin/KJL-OFFICE-Markdown',
+  promote: 'https://github.com/KJLLin/KJL-OFFICE-Markdown',
 };
 
 // NOTE: this function intentionally is NOT named `open` because that
@@ -126,7 +130,7 @@ async function visit(url: string) {
       <div class="about__version-row">
         <span class="about__version">v{{ VERSION }}</span>
         <button
-          v-if="activeBadge"
+          v-if="KJL_SUPPORT_PROMPTS && activeBadge"
           type="button"
           class="about__supporter-badge"
           @click="supportOpen = true"
@@ -151,7 +155,7 @@ async function visit(url: string) {
           <Icons class="about__link-icon" name="globe" :size="16" />
           <div>
             <div class="about__link-title">Website / 官网</div>
-            <div class="about__link-url">solomd.app</div>
+            <div class="about__link-url">github.com/KJLLin/KJL-OFFICE-Markdown</div>
           </div>
           <Icons class="about__link-chev" name="chevron-right" :size="14" />
         </button>
@@ -159,19 +163,19 @@ async function visit(url: string) {
           <Icons class="about__link-icon" name="star" :size="16" />
           <div>
             <div class="about__link-title">Star on GitHub / 去 GitHub 点 Star</div>
-            <div class="about__link-url">zhitongblog/solomd</div>
+            <div class="about__link-url">KJLLin/KJL-OFFICE-Markdown</div>
           </div>
           <Icons class="about__link-chev" name="chevron-right" :size="14" />
         </button>
         <button class="about__link" @click="visit(links.releases)">
           <Icons class="about__link-icon" name="sparkle" :size="16" />
           <div>
-            <div class="about__link-title">What's New / 更新日志</div>
-            <div class="about__link-url">solomd.app/whats-new</div>
+            <div class="about__link-title">Releases / 更新日志</div>
+            <div class="about__link-url">github.com/KJLLin/KJL-OFFICE-Markdown/releases</div>
           </div>
           <Icons class="about__link-chev" name="chevron-right" :size="14" />
         </button>
-        <button class="about__link" @click="supportOpen = true">
+        <button v-if="KJL_SUPPORT_PROMPTS" class="about__link" @click="supportOpen = true">
           <Icons class="about__link-icon" name="heart" :size="16" />
           <div>
             <div class="about__link-title">Support / 支持开发者</div>
@@ -189,24 +193,31 @@ async function visit(url: string) {
         </button>
       </div>
 
-      <div v-if="sponsors.length" class="about__sponsors">
+      <div v-if="KJL_SUPPORT_PROMPTS && sponsors.length" class="about__sponsors">
         <div class="about__sponsors-title">Thanks to our sponsors / 感谢赞助者</div>
         <div class="about__sponsors-names">{{ sponsors.join(' · ') }}</div>
       </div>
-      <div v-if="testers.length" class="about__sponsors">
+      <div v-if="KJL_SUPPORT_PROMPTS && testers.length" class="about__sponsors">
         <div class="about__sponsors-title">Thanks to our testers / 感谢测试者</div>
         <div class="about__sponsors-names">{{ testers.join(' · ') }}</div>
       </div>
-      <div v-if="promoters.length" class="about__sponsors">
+      <div v-if="KJL_SUPPORT_PROMPTS && promoters.length" class="about__sponsors">
         <div class="about__sponsors-title">Thanks to our promoters / 感谢推广者</div>
         <div class="about__sponsors-names">{{ promoters.join(' · ') }}</div>
       </div>
-      <button v-if="!iapUseStoreFlow" class="about__promote" @click="visit(links.promote)">
-        Help spread the word / 帮忙推广 SoloMD
+      <button v-if="KJL_SUPPORT_PROMPTS && !iapUseStoreFlow" class="about__promote" @click="visit(links.promote)">
+        Help spread the word / 帮忙推广
       </button>
 
+      <p class="about__credit">
+        基于 {{ UPSTREAM_NAME }} 改造（原作者 xiangdong li，MIT 许可）·
+        <button class="about__credit-link" type="button" @click="visit(links.upstream)">
+          上游仓库 / Upstream
+        </button>
+      </p>
+
       <div class="about__footer">
-        © 2026 xiangdong li · MIT License<br />
+        © 2026 KJLLin · MIT License<br />
         Tauri 2 · Vue 3 · CodeMirror 6 · Rust
       </div>
     </div>
@@ -359,6 +370,26 @@ async function visit(url: string) {
 .about__sponsors-names {
   color: var(--text-2);
 }
+.about__credit {
+  margin: 12px 4px 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-3);
+}
+.about__credit-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.about__credit-link:hover {
+  color: var(--accent);
+}
+
 .about__footer {
   font-size: 11px;
   color: var(--text-3);

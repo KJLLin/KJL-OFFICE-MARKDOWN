@@ -7,6 +7,7 @@ import { hasGitBackend, isMacOS, isWindowsDesktop, usesCommandKey } from '../lib
 import { useTabsStore } from '../stores/tabs';
 import { IS_APP_STORE_BUILD } from '../lib/app-build';
 import { isMasBuild } from '../lib/check-update';
+import { KJL_UPDATE_SETTINGS } from '../lib/kjl-flags';
 import type { Theme } from '../types';
 
 /**
@@ -62,7 +63,7 @@ export function useAppMenu() {
         },
       },
       aiAvailable: !IS_APP_STORE_BUILD,
-      updateCheckAvailable: !isMasBuild(),
+      updateCheckAvailable: KJL_UPDATE_SETTINGS && !isMasBuild(),
       gitAvailable: hasGitBackend(),
     });
   }

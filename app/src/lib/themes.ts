@@ -212,8 +212,8 @@ export function cmThemeFor(theme: Theme, customTheme = false): Extension {
 /**
  * #344 / #467 / #477 — caret-line tint. Selector is one step more specific than
  * the base theme's transparent `.cm-activeLine` so it wins regardless of order.
- * In non-dark themes, uses the warm soft pink tint users expect on the active
- * editing line; in dark themes, uses a subtle accent tint.
+ * KJL-OFFICE: the tint follows the theme's own accent (7% light / 14% dark,
+ * resolved through --active-line-bg) instead of the upstream warm pink.
  *
  * IMPORTANT: must use `&.cm-dark` (NOT `&dark`, which is only valid inside
  * `EditorView.baseTheme` and throws `RangeError: Unsupported selector: &dark`
@@ -223,13 +223,11 @@ export function activeLineExtension(on: boolean): Extension {
   if (!on) return [];
   return EditorView.theme({
     '.cm-content .cm-line.cm-activeLine': {
-      backgroundColor:
-        'var(--active-line-bg, color-mix(in srgb, #f48fb1 24%, color-mix(in srgb, var(--accent) 10%, transparent)))',
+      backgroundColor: 'var(--active-line-bg, color-mix(in srgb, var(--accent) 7%, transparent))',
       borderRadius: '3px',
     },
     '&.cm-dark .cm-content .cm-line.cm-activeLine': {
-      backgroundColor:
-        'var(--active-line-bg, color-mix(in srgb, #f48fb1 16%, color-mix(in srgb, var(--accent) 14%, transparent)))',
+      backgroundColor: 'var(--active-line-bg, color-mix(in srgb, var(--accent) 14%, transparent))',
       borderRadius: '3px',
     },
   });
