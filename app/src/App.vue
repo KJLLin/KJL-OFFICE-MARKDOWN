@@ -3148,7 +3148,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
   font-size: 14px;
   color: inherit;
 }
-.arn__btn--primary { background: var(--accent, #ff9f40); color: #000; border-color: transparent; font-weight: 600; }
+.arn__btn--primary { background: var(--accent, #3a8cf2); color: #000; border-color: transparent; font-weight: 600; }
 
 .app {
   display: flex;

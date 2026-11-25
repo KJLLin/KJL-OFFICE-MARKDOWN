@@ -544,7 +544,7 @@ function onKeydown(e: KeyboardEvent) {
   outline: none;
 }
 .tbl__size-input:focus {
-  border-color: var(--accent, #ff9f40);
+  border-color: var(--accent, #3a8cf2);
 }
 .tbl__x {
   border: 0;
@@ -587,8 +587,8 @@ function onKeydown(e: KeyboardEvent) {
   color: var(--text);
 }
 .tbl__group button.tbl__on {
-  border-color: var(--accent, #ff9f40);
-  color: var(--accent, #ff9f40);
+  border-color: var(--accent, #3a8cf2);
+  color: var(--accent, #3a8cf2);
 }
 .tbl__danger:hover {
   color: var(--danger, #d64545) !important;
@@ -629,8 +629,8 @@ function onKeydown(e: KeyboardEvent) {
   background: var(--bg-hover) !important;
 }
 .tbl__colbar-th--selected {
-  color: var(--accent, #ff9f40);
-  background: color-mix(in srgb, var(--accent, #ff9f40) 14%, var(--bg-elev)) !important;
+  color: var(--accent, #3a8cf2);
+  background: color-mix(in srgb, var(--accent, #3a8cf2) 14%, var(--bg-elev)) !important;
 }
 .tbl__colbar-label {
   margin-right: 4px;
@@ -639,10 +639,10 @@ function onKeydown(e: KeyboardEvent) {
   opacity: 0.75;
 }
 .tbl__col-selected {
-  background: color-mix(in srgb, var(--accent, #ff9f40) 8%, transparent) !important;
+  background: color-mix(in srgb, var(--accent, #3a8cf2) 8%, transparent) !important;
 }
 .tbl__focus {
-  outline: 2px solid var(--accent, #ff9f40);
+  outline: 2px solid var(--accent, #3a8cf2);
   outline-offset: -2px;
 }
 .tbl__cell {
@@ -691,8 +691,8 @@ function onKeydown(e: KeyboardEvent) {
   cursor: pointer;
 }
 .tbl__btn--primary {
-  background: var(--accent, #ff9f40);
-  border-color: var(--accent, #ff9f40);
+  background: var(--accent, #3a8cf2);
+  border-color: var(--accent, #3a8cf2);
   color: var(--accent-fg, #1a1a1a);
   font-weight: 600;
 }

@@ -440,7 +440,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKey));
   font-weight: 500;
 }
 .outline__item--dragover {
-  outline: 1px dashed var(--accent, #ff9f40);
+  outline: 1px dashed var(--accent, #3a8cf2);
   background: var(--fill-1);
 }
 .outline__twisty {

@@ -201,5 +201,5 @@ function shortCwd(): string {
   font-size: 14px;
   color: inherit;
 }
-.afp__btn--primary { background: var(--accent, #ff9f40); color: #000; border-color: transparent; font-weight: 600; }
+.afp__btn--primary { background: var(--accent, #3a8cf2); color: #000; border-color: transparent; font-weight: 600; }
 </style>

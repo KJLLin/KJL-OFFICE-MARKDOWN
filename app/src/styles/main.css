@@ -1169,8 +1169,8 @@ body.solomd-printing {
   --md-code: #1f2328;
   --md-code-bg: #f3f5f8;
   --md-quote: #555555;
-  --md-quote-bg: #fbf8f1;
-  --md-quote-border: #d0873c;
+  --md-quote-bg: #f4f7fd;
+  --md-quote-border: #3a8cf2;
   --md-list: #59636e;
   --md-hr: #c0bdb3;
   --syn-keyword: #a626a4;
@@ -1207,14 +1207,14 @@ body.solomd-printing {
   --md-h6: #888888;
   --md-strong: #ffffff;
   --md-em: #d8d8d8;
-  --md-link: #ff9f40;
+  --md-link: #7cb0ff;
   --md-url: #ffb874;
   --md-code: #ff9f9f;
   --md-code-bg: #26282c;
   --md-quote: #b8b1a6;
   --md-quote-bg: #2d2923;
   --md-quote-border: #ffa54d;
-  --md-list: #ff9f40;
+  --md-list: #7cb0ff;
   --md-hr: #444444;
   --syn-keyword: #c678dd;
   --syn-string: #98c379;

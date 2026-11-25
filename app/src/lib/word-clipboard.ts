@@ -24,11 +24,11 @@ const WORD_BASE_CSS = `
     font-family: Calibri, "PingFang SC", "Microsoft YaHei", sans-serif;
     font-size: 11pt;
     line-height: 1.5;
-    color: #1f1d1a;
+    color: #16202e;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: Calibri, "PingFang SC", "Microsoft YaHei", sans-serif;
-    color: #1f1d1a;
+    color: #16202e;
     font-weight: bold;
     line-height: 1.3;
   }
@@ -41,14 +41,14 @@ const WORD_BASE_CSS = `
   blockquote {
     margin: 6pt 0 6pt 18pt;
     padding: 2pt 0 2pt 8pt;
-    border-left: 3pt solid #ff9f40;
-    color: #5e5b55;
+    border-left: 3pt solid #3a8cf2;
+    color: #4e5a6b;
   }
   pre {
-    background: #f3efe7;
-    color: #1f1d1a;
-    border: 1px solid #e6e2d8;
-    border-left: 3pt solid #ff9f40;
+    background: #eff3fa;
+    color: #16202e;
+    border: 1px solid #dfe6f0;
+    border-left: 3pt solid #3a8cf2;
     padding: 8pt 10pt;
     font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
     font-size: 10pt;
@@ -61,11 +61,11 @@ const WORD_BASE_CSS = `
     font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
     font-size: 10pt;
     color: #8a4a00;
-    background: #f3efe7;
+    background: #eff3fa;
     padding: 1pt 3pt;
   }
   pre code {
-    color: #1f1d1a;
+    color: #16202e;
     background: transparent;
     padding: 0;
   }
@@ -75,7 +75,7 @@ const WORD_BASE_CSS = `
     margin: 6pt 0;
   }
   th, td {
-    border: 1px solid #e6e2d8;
+    border: 1px solid #dfe6f0;
     padding: 4pt 6pt;
     vertical-align: top;
   }
@@ -190,14 +190,14 @@ function styleTablesForWord(html: string): string {
       return `<table${attrs} style="border-collapse: collapse; width: 100%; margin: 6pt 0;">`;
     })
     .replace(/<th(\b[^>]*?)>/gi, (_m, attrs: string) => {
-      const base = 'border: 1px solid #e6e2d8; padding: 4pt 6pt; background: #ffe7cc; font-weight: bold;';
+      const base = 'border: 1px solid #dfe6f0; padding: 4pt 6pt; background: #ffe7cc; font-weight: bold;';
       if (/\bstyle\s*=\s*"([^"]*)"/i.test(attrs)) {
         return `<th${attrs.replace(/\bstyle\s*=\s*"([^"]*)"/i, `style="${base} $1"`)}>`;
       }
       return `<th${attrs} style="${base}">`;
     })
     .replace(/<td(\b[^>]*?)>/gi, (_m, attrs: string) => {
-      const base = 'border: 1px solid #e6e2d8; padding: 4pt 6pt;';
+      const base = 'border: 1px solid #dfe6f0; padding: 4pt 6pt;';
       if (/\bstyle\s*=\s*"([^"]*)"/i.test(attrs)) {
         return `<td${attrs.replace(/\bstyle\s*=\s*"([^"]*)"/i, `style="${base} $1"`)}>`;
       }
@@ -556,7 +556,7 @@ export function buildWordClipboardHtml(rawHtml: string): string {
     }
 
     const preStyle =
-      'background:#f3efe7;color:#1f1d1a;border:1px solid #e6e2d8;border-left:3pt solid #ff9f40;padding:8pt 10pt;font-family:"JetBrains Mono",Consolas,"Courier New",monospace;font-size:10pt;line-height:1.45;white-space:pre-wrap;word-break:break-word;margin:8pt 0;';
+      'background:#eff3fa;color:#16202e;border:1px solid #dfe6f0;border-left:3pt solid #3a8cf2;padding:8pt 10pt;font-family:"JetBrains Mono",Consolas,"Courier New",monospace;font-size:10pt;line-height:1.45;white-space:pre-wrap;word-break:break-word;margin:8pt 0;';
     return `<pre style="${preStyle}">${cleaned}</pre>`;
   });
 

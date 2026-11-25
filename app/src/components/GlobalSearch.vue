@@ -524,7 +524,7 @@ function onKey(e: KeyboardEvent) {
   text-overflow: ellipsis;
 }
 .sp__snippet :deep(mark) {
-  background: var(--accent, #ff9f40);
+  background: var(--accent, #3a8cf2);
   color: #fff;
   padding: 0 2px;
   border-radius: 2px;

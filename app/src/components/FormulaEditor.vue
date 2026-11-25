@@ -342,7 +342,7 @@ onMounted(() => {
 }
 .fx__group button:hover {
   background: var(--bg-hover);
-  border-color: var(--accent, #ff9f40);
+  border-color: var(--accent, #3a8cf2);
 }
 .fx__source {
   margin: 0;
@@ -399,8 +399,8 @@ onMounted(() => {
   cursor: pointer;
 }
 .fx__btn--primary {
-  background: var(--accent, #ff9f40);
-  border-color: var(--accent, #ff9f40);
+  background: var(--accent, #3a8cf2);
+  border-color: var(--accent, #3a8cf2);
   color: var(--accent-fg, #1a1a1a);
   font-weight: 600;
 }

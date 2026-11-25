@@ -8082,7 +8082,7 @@ const cls = computed(() => ({
   outline: none;
 }
 .plain-find__input:focus {
-  border-color: var(--accent, #ff9f40);
+  border-color: var(--accent, #3a8cf2);
 }
 .plain-find__count {
   font-size: 12px;
@@ -8106,8 +8106,8 @@ const cls = computed(() => ({
   background: var(--bg-hover, rgba(127, 127, 127, 0.15));
 }
 .plain-find__btn--on {
-  color: var(--accent, #ff9f40);
-  border-color: var(--accent, #ff9f40);
+  color: var(--accent, #3a8cf2);
+  border-color: var(--accent, #3a8cf2);
 }
 .plain-find__btn--text {
   font-size: 12px;
@@ -8139,7 +8139,7 @@ const cls = computed(() => ({
   color: var(--text);
 }
 .plain-ac__item--active {
-  background: var(--accent, #ff9f40);
+  background: var(--accent, #3a8cf2);
   color: var(--accent-fg, #fff);
 }
 .plain-ac__hint {
@@ -8553,7 +8553,7 @@ const cls = computed(() => ({
 }
 .plain-block__render :deep(.md-wikilink) {
   color: var(--accent-text);
-  background: color-mix(in srgb, var(--accent, #ff9f40) 10%, transparent);
+  background: color-mix(in srgb, var(--accent, #3a8cf2) 10%, transparent);
   padding: 1px 5px;
   border-radius: 4px;
   text-decoration: none;
@@ -8562,7 +8562,7 @@ const cls = computed(() => ({
   transition: background 0.12s;
 }
 .plain-block__render :deep(.md-wikilink:hover) {
-  background: color-mix(in srgb, var(--accent, #ff9f40) 22%, transparent);
+  background: color-mix(in srgb, var(--accent, #3a8cf2) 22%, transparent);
   text-decoration: underline;
 }
 .plain-block__render :deep(kbd) {
